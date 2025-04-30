@@ -1,0 +1,16 @@
+{
+    "domain": "daelim_smarthome",
+    "name": "Daelim Smart Home Integration",
+    "codeowners": [
+      "@crescat"
+    ],
+    "version": "0.1",
+    "config_flow": true,
+    "dependencies": [],
+    "documentation": "",
+    "homekit": {},
+    "iot_class": "local_pushing",
+    "requirements": [],
+    "ssdp": [],
+    "zeroconf": []
+  }
