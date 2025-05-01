@@ -1,4 +1,5 @@
 """Platform for light integration."""
+
 from __future__ import annotations
 
 import logging
@@ -17,7 +18,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .helper import request_data
+from .helper import request_ajax
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +33,10 @@ async def async_setup_entry(
     entities = []
     for devices in coordinator.device_list:
         if devices["type"] == "light":
-            entities = [DaelimLight(device_data, coordinator) for device_data in devices["devices"]]
+            entities = [
+                DaelimLight(device_data, coordinator)
+                for device_data in devices["devices"]
+            ]
 
     async_add_entities(entities)
 
@@ -78,31 +82,23 @@ class DaelimLight(CoordinatorEntity, LightEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._group)},
-            name = self._group,
+            name=self._group,
             manufacturer="Daelim Smarthome",
         )
 
     def turn_on(self, **kwargs: Any) -> None:
         """Instruct the light to turn on."""
-        body = {
-            "type": self._type,
-            "uid": self.uid,
-            "control": "on"
-        }
+        body = {"type": self._type, "uid": self.uid, "control": "on"}
 
-        _response = self.coordinator.post_with_csrf_and_daelim_elife("/device/control/all.ajax", body)
+        _response = self.coordinator.request_ajax("/device/control/all.ajax", body)
         self._state = True
         self.schedule_update_ha_state()
 
     def turn_off(self, **kwargs: Any) -> None:
         """Instruct the light to turn off."""
-        body = {
-            "type": self._type,
-            "uid": self.uid,
-            "control": "off"
-        }
+        body = {"type": self._type, "uid": self.uid, "control": "off"}
 
-        _response = self.coordinator.post_with_csrf_and_daelim_elife("/device/control/all.ajax", body)
+        _response = self.coordinator.request_ajax("/device/control/all.ajax", body)
         self._state = False
         self.schedule_update_ha_state()
 

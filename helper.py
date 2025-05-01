@@ -13,12 +13,13 @@ json_header = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 9_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13C75 DAELIM/IOS",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "application/json",
-    }
+}
 
 html_header = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 9_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13C75 DAELIM/IOS",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "X-Requested-With": "com.daelim.elife",
 }
 
 login_json = {
@@ -31,40 +32,53 @@ login_json = {
     "input_version": "1.1.4",
     "input_push_token": "",
     "input_flag": "login",
-    "input_dv_model_info": "iPhone12,8"
+    "input_dv_model_info": "iPhone12,8",
 }
 
+
 def get_csrf():
-    response = request_data(
-        "/common/nativeToken.ajax",
-        {},
-        {})
+    response = request_ajax("/common/nativeToken.ajax", {}, {})
     return response["value"]
 
-def get_daelim_elife(csrf, username, password):
-    response =  request_data(
-        "/login.ajax",
-        {"_csrf": csrf},
-        get_login_json(username, password))
-    return response["daelim_elife"]
+
+def login(username, password, device_id=None, csrf=None):
+    if not device_id:
+        device_id = str(uuid.uuid4())
+    if not csrf:
+        csrf = get_csrf()
+    response = request_ajax(
+        "/login.ajax", {"_csrf": csrf}, get_login_json(username, password, device_id)
+    )
+    daelim_elife = response["daelim_elife"]
+    return {
+        "daelim_elife": daelim_elife,
+        "device_id": device_id,
+        "csrf": csrf,
+        "expires_at": get_expire_time(daelim_elife),
+    }
+
 
 def get_json_header():
     return json_header
 
+
 def get_html_header():
     return html_header
 
-def get_login_json(username, password):
-    rand_uuid = str(uuid.uuid4())
+
+def get_login_json(username, password, device_id):
     return login_json | {
-        "input_dv_uuid": rand_uuid,
+        "input_dv_uuid": device_id,
         "input_username": encrypt(username),
-        "input_password": encrypt(password)
-        }
+        "input_password": encrypt(password),
+    }
+
 
 def base64ToString(b):
     import base64
-    return base64.b64decode(b).decode('utf-8')
+
+    return base64.b64decode(b).decode("utf-8")
+
 
 def get_expire_time(token):
     data = token.split(".")[1]
@@ -72,7 +86,8 @@ def get_expire_time(token):
     exp_time = decoded["exp"]
     return datetime.datetime.fromtimestamp(exp_time)
 
-def request_data(path, header, params):
+
+def request_ajax(path, header, params):
     url = API_PREFIX + path
     header = get_json_header() | header
     s = requests.Session()
@@ -86,19 +101,16 @@ def request_data(path, header, params):
     )
 
     s.mount(API_PREFIX, HTTPAdapter(max_retries=retries))
-    response = s.post(
-        url,
-        headers=header,
-        json=params,
-        timeout=TIMEOUT)
+    response = s.post(url, headers=header, json=params, timeout=TIMEOUT)
 
     content_type = response.headers["content-type"]
     if "application/json" in content_type:
         return response.json()
 
-    raise TypeError('response is not json')
+    raise TypeError("response is not json")
 
-def request_html(path, header, params):
+
+def get_html(path, header):
     url = API_PREFIX + path
     header = get_html_header() | header
     s = requests.Session()
@@ -107,31 +119,26 @@ def request_html(path, header, params):
         # 0s, 10s, 20s, 40s, 80s...
         backoff_factor=5,
         status_forcelist=[500, 502, 503, 504],
-        # allow retry on POST requests
-        allowed_methods=None,
     )
-
     s.mount(API_PREFIX, HTTPAdapter(max_retries=retries))
-    return s.post(
-        url,
-        headers=header,
-        json=params,
-        timeout=TIMEOUT)
+    return s.get(url, headers=header, timeout=TIMEOUT)
 
 
 def unpad(s):
-    print(s)
-    return s[:-ord(s[len(s)-1:])]
+    return s[: -ord(s[len(s) - 1 :])]
+
 
 def pad(s):
-    return s + ((BS - len(s) % BS) * chr(BS - len(s) % BS)).encode('utf-8')
+    return s + ((BS - len(s) % BS) * chr(BS - len(s) % BS)).encode("utf-8")
+
 
 def encrypt(raw):
     if isinstance(raw, str):
-        raw = raw.encode('utf-8')
+        raw = raw.encode("utf-8")
     raw = pad(raw)
     cipher = AES.new(KEY, AES.MODE_CBC, IV)
-    return base64.b64encode(cipher.encrypt(raw)).decode('utf-8')
+    return base64.b64encode(cipher.encrypt(raw)).decode("utf-8")
+
 
 def decrypt(enc):
     enc = base64.b64decode(enc)
