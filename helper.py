@@ -2,10 +2,12 @@ import base64
 import datetime
 import json
 import requests
+import uuid
 from requests.adapters import HTTPAdapter, Retry
 from Crypto.Cipher import AES
 from Crypto import Random
 from .const import TIMEOUT, RETRY, API_PREFIX, KEY, IV, BS
+
 
 json_header = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 9_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13C75 DAELIM/IOS",
@@ -24,7 +26,6 @@ login_json = {
     "input_hm_cd": "",
     "input_acc_os_info": "ios",
     "input_dv_osver_info": "15.4.1",
-    "input_dv_uuid": "6B965DC2-0F2C-4EEE-B43C-93399801C727",
     "input_auto_login": "off",
     "input_dv_make_info": "Apple",
     "input_version": "1.1.4",
@@ -54,7 +55,9 @@ def get_html_header():
     return html_header
 
 def get_login_json(username, password):
+    rand_uuid = str(uuid.uuid4())
     return login_json | {
+        "input_dv_uuid": rand_uuid,
         "input_username": encrypt(username),
         "input_password": encrypt(password)
         }

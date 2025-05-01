@@ -28,7 +28,6 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Setup lights"""
-    print("setting up lights")
     coordinator = hass.data[DOMAIN]
     entities = []
     for devices in coordinator.device_list:
