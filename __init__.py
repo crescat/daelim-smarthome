@@ -25,11 +25,11 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.LIGHT,
-    # Platform.CLIMATE,
+    Platform.CLIMATE,
+    Platform.SWITCH,
     # Platform.SENSOR,
     # Platform.FAN,
     # Platform.SWITCH,
-    # Platform.BUTTON,
 ]
 
 
@@ -94,10 +94,22 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         """
         html = await self.hass.async_add_executor_job(self.credentials.main_home_html)
         self.device_list = self.find_device_list_from_html(html)
+        await self.hass.async_add_executor_job(self.fix_heat_datas)
 
         self.hass.async_create_background_task(
             self._connect_websocket(), "daelim-websocket"
         )
+
+    def fix_heat_datas(self):
+        for devices in self.device_list:
+            if devices["type"] != "heat":
+                continue
+            for device in devices["devices"]:
+                if device["operation"]:
+                    continue
+                resp = self.request_device_status(device["uid"], "heat")
+                if resp["result"]:
+                    device["operation"] = resp["data"]
 
     async def _connect_websocket(self):
         """Establish WebSocket connection."""
@@ -112,6 +124,8 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 {"type": "alloffswitch"},
                 {"type": "smartdoor"},
                 {"type": "aircon"},
+                # elevator, events: elevate_call elevator_call_request
+                {"type": "call"},
             ]
         }
         json_data = json.dumps(data)
