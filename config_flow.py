@@ -15,7 +15,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
-from .helper import request_ajax, get_csrf, login
+from .helper import Credentials
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,13 +32,14 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]):
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
+    credentials = Credentials(data["email"], data["password"])
     try:
-        login_result = await hass.async_add_executor_job(
-            login, data["email"], data["password"]
-        )
+        await hass.async_add_executor_job(credentials.login)
+        await hass.async_add_executor_job(credentials.websocket_keys_json)
     except:
         raise InvalidAuth
-    return login_result
+
+    return credentials
 
     # If you cannot connect:
     # throw CannotConnect
@@ -60,7 +61,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                login_result = await validate_input(self.hass, user_input)
+                credentials = await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
@@ -71,7 +72,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 return self.async_create_entry(
                     title="Daelim Home",
-                    data=user_input | {"login_result": login_result},
+                    data=user_input | {"credentials": credentials.to_dict()},
                 )
 
         return self.async_show_form(
