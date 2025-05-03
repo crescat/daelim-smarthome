@@ -32,6 +32,7 @@ PLATFORMS: list[Platform] = [
 
 
 MESSAGE_LOGGED_OUT = "장시간 미사용으로 로그아웃 되었습니다."
+MESSAGE_WEBSOCKET_TOKEN_EXPIRED = "만료된 클라우드토큰 입니다."
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -93,6 +94,11 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         html = await self.hass.async_add_executor_job(self.credentials.main_home_html)
         self.device_list = self.find_device_list_from_html(html)
         await self.hass.async_add_executor_job(self.fix_heat_datas)
+
+        self.hass.bus.async_listen(
+            "daelim_websocket_token_expired", self.websocket_token_expired
+        )
+
         websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json
         )
@@ -121,8 +127,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 {"type": "alloffswitch"},
                 {"type": "smartdoor"},
                 {"type": "aircon"},
-                # elevator, events: elevate_call elevator_call_request
-                {"type": "call"},
+                # {"type": "call"},
             ]
         }
         json_data = json.dumps(data)
@@ -132,8 +137,12 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 async with connect(url) as websocket:
                     await websocket.send(json_data)
                     while True:
-                        data = await websocket.recv()
-                        await self.handle_websocket_message(data)
+                        message = await websocket.recv()
+                        message = json.loads(message)
+                        should_exit = await self.handle_websocket_message(message)
+                        if should_exit:
+                            break
+
             except websockets.exceptions.ConnectionClosed:
                 # restart connection
                 pass
@@ -142,15 +151,29 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             except ssl.SSLError:
                 pass
 
-    async def handle_websocket_message(self, message):
-        """Handle incoming WebSocket messages."""
-        try:
-            data = json.loads(message)
-            if "header" in data:
-                # this is a response, ignore it
-                pass
-            elif "action" in data:
-                _LOGGER.debug("Received websocket message: %s", message)
-                self.async_set_updated_data(data)
-        except Exception as e:
+    async def websocket_token_expired(self, _event_data):
+        websocket_keys = await self.hass.async_add_executor_job(
+            self.credentials.websocket_keys_json, True
+        )
+        self.hass.async_create_background_task(
+            self._connect_websocket(websocket_keys), "daelim-websocket"
+        )
+
+    async def handle_websocket_message(self, message) -> bool:
+        """Handle incoming WebSocket messages. Return true to exit loop"""
+
+        has_expire_msg = (
+            "result" in message
+            and message["result"]["message"] == MESSAGE_WEBSOCKET_TOKEN_EXPIRED
+        )
+        if has_expire_msg:
+            self.hass.bus.fire("daelim_websocket_token_expired")
+            return True
+
+        if "header" in message:
+            # this is a response, ignore it
             pass
+        elif "action" in message:
+            _LOGGER.debug("Received websocket message: %s", message)
+            self.async_set_updated_data(message)
+        return False
