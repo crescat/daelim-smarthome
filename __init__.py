@@ -86,6 +86,9 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         _LOGGER.warning("failed to find device list\n\n{}", html)
         raise Exception("Cannot find device list!")
 
+    async def _async_update_data(self):
+        pass
+
     async def _async_setup(self):
         html = await self.hass.async_add_executor_job(self.credentials.main_home_html)
         self.device_list = self.find_device_list_from_html(html)
