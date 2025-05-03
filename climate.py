@@ -23,6 +23,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_WHOLE
 
+from .helper import get_location
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
         self.coordinator = coordinator
 
         self.entity_id = "climate.heating_" + self.uid
-        self._name = "{} Heating System".format(device_data["location_name"])
+        self._name = "{} Heating".format(get_location(device_data))
         self._group = device_data["location_name"]
         self._type = device_data["operation"]["type"]
         self._current_temperature = int(device_data["operation"]["current_temp"])
@@ -281,7 +282,7 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
         self.coordinator = coordinator
 
         self.entity_id = "climate.AC_" + self.uid
-        self._name = "{} AC".format(device_data["location_name"])
+        self._name = "{} AC".format(get_location(device_data))
         self._group = device_data["location_name"]
         self._type = device_data["operation"]["type"]
 

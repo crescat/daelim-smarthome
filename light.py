@@ -17,6 +17,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .helper import get_location
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class DaelimLight(CoordinatorEntity, LightEntity):
         self.device_name = device_data["device_name"]
         self.entity_id = "light." + self.uid
         self._name = "{} Light {}".format(
-            device_data["location_name"], self.device_name[-1]
+            get_location(device_data), self.device_name[-1]
         )
         self._state = device_data["operation"]["status"] == "on"
         self._group = device_data["location_name"]

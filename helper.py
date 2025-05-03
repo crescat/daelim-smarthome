@@ -222,3 +222,9 @@ def decrypt(enc):
     enc = base64.b64decode(enc)
     cipher = AES.new(KEY, AES.MODE_CBC, IV)
     return unpad(cipher.decrypt(enc))
+
+
+def get_location(device_data):
+    if "location_name_alias" in device_data:
+        return device_data["location_name_alias"]
+    return device_data["location_name"]
