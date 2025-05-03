@@ -85,12 +85,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         _LOGGER.warning("failed to find device list\n\n{}", html)
         raise Exception("Cannot find device list!")
 
-    async def _async_update_data(self):
-        """Fetch data from API endpoint.
-
-        This is the place to pre-process the data to lookup tables
-        so entities can quickly look up their data.
-        """
+    async def _async_setup(self):
         html = await self.hass.async_add_executor_job(self.credentials.main_home_html)
         self.device_list = self.find_device_list_from_html(html)
         await self.hass.async_add_executor_job(self.fix_heat_datas)
