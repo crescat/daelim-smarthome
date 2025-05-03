@@ -47,12 +47,12 @@ async def async_setup_entry(
     entities = []
     for devices in coordinator.device_list:
         if devices["type"] == "heat":
-            entities = [
+            entities += [
                 DaelimHeating(device_data, coordinator)
                 for device_data in devices["devices"]
             ]
         elif devices["type"] == "aircon":
-            entities = [
+            entities += [
                 DaelimAC(device_data, coordinator) for device_data in devices["devices"]
             ]
 
