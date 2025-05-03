@@ -40,10 +40,12 @@ class Credentials:
     def from_dict(cls, dict):
         cred = cls(dict["username"], dict["password"])
         cred.device_id = dict["device_id"]
-        cred.websocket = dict["websocket"]
-        cred.csrf = dict["csrf"]
-        cred.daelim_elife = dict["daelim_elife"]
-        cred.expire_time = datetime.datetime.fromtimestamp(dict["expire_time"])
+        cred.websocket_keys_json = dict.get("websocket_keys_json")
+        cred.csrf = dict.get("csrf")
+        cred.daelim_elife = dict.get("daelim_elife")
+        cred.expire_time = dict.get("expire_time") and datetime.datetime.fromtimestamp(
+            dict["expire_time"]
+        )
         return cred
 
     def to_dict(self):
@@ -51,7 +53,7 @@ class Credentials:
             "username": self.username,
             "password": self.password,
             "device_id": self.device_id,
-            "websocket": self.websocket,
+            "websocket_keys_json": self.websocket_keys_json,
             "csrf": self.csrf,
             "daelim_elife": self.daelim_elife,
             "expire_time": self.expire_time.timestamp() if self.expire_time else None,

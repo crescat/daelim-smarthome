@@ -52,20 +52,14 @@ class DaelimLight(CoordinatorEntity, LightEntity):
 
         self.device_name = device_data["device_name"]
         self.entity_id = "light." + self.uid
-        self._name = "{} Light {}".format(
+        self._attr_name = "{} Light {}".format(  # noqa: UP032
             get_location(device_data), self.device_name[-1]
         )
         self._state = device_data["operation"]["status"] == "on"
         self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]
         self._attr_supported_color_modes = {ColorMode.ONOFF}
-
-        self.color_mode = ColorMode.ONOFF
-
-    @property
-    def name(self) -> str:
-        """Return the display name of this light."""
-        return self._name
+        self._attr_color_mode = ColorMode.ONOFF
 
     @property
     def is_on(self) -> bool | None:
@@ -90,16 +84,18 @@ class DaelimLight(CoordinatorEntity, LightEntity):
         """Instruct the light to turn on."""
         body = {"type": self._type, "uid": self.uid, "control": "on"}
 
-        _response = self.coordinator.request_ajax("/device/control/all.ajax", body)
-        self._state = True
+        response = self.coordinator.request_ajax("/device/control/all.ajax", body)
+        if response["result"]:
+            self._state = True
         self.schedule_update_ha_state()
 
     def turn_off(self, **kwargs: Any) -> None:
         """Instruct the light to turn off."""
         body = {"type": self._type, "uid": self.uid, "control": "off"}
 
-        _response = self.coordinator.request_ajax("/device/control/all.ajax", body)
-        self._state = False
+        response = self.coordinator.request_ajax("/device/control/all.ajax", body)
+        if response["result"]:
+            self._state = False
         self.schedule_update_ha_state()
 
     @callback

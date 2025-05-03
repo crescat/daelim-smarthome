@@ -21,4 +21,8 @@ Known issues:
 - "multiple device login" error: avoid opening the app while setting up this integration
 - other login related errors: try re-login on your phone; close the app; then start over the hass setup
 
+Roadmap:
+
+- avoid re-login on bearer token expires
+
 [1]: https://apps.apple.com/us/app/%EC%8A%A4%EB%A7%88%ED%8A%B8-elife/id1551248421
