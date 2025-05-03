@@ -71,7 +71,7 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
 
         self.entity_id = "climate.heating_" + self.uid
         self._name = "{} Heating".format(get_location(device_data))
-        self._group = device_data["location_name"]
+        self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]
         self._attr_current_temperature = int(device_data["operation"]["current_temp"])
         self._attr_target_temperature = int(device_data["operation"]["set_temp"])
@@ -226,7 +226,7 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
 
         self.entity_id = "climate.AC_" + self.uid
         self._name = "{} AC".format(get_location(device_data))
-        self._group = device_data["location_name"]
+        self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]
 
         self._attr_current_temperature = self.parse_temp(

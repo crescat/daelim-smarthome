@@ -56,7 +56,7 @@ class DaelimLight(CoordinatorEntity, LightEntity):
             get_location(device_data), self.device_name[-1]
         )
         self._state = device_data["operation"]["status"] == "on"
-        self._group = device_data["location_name"]
+        self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]
         self._attr_supported_color_modes = {ColorMode.ONOFF}
 

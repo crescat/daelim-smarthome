@@ -12,6 +12,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .helper import get_location
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ class DaelimAllOffSwitch(CoordinatorEntity, SwitchEntity):
         self._name = "All off switch"
 
         self._state = device_data["operation"]["status"] == "on"
-        self._group = device_data["location_name"]
+        self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]
 
     @property
