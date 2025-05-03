@@ -105,11 +105,11 @@ class Credentials:
         _cache["value"] = content
         return content
 
-    def websocket_keys_json(self):
-        if self.websocket:
+    def websocket_keys_json(self, force_refresh=False):
+        if self.websocket and not force_refresh:
             return self.websocket
         self.ensure_logged_in()
-        html = self.main_home_html()
+        html = self.main_home_html(force_refresh)
         keys = {}
         for key in ["roomKey", "userKey", "accessToken"]:
             regex = rf"'{key}': '([^']+)'"
