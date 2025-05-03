@@ -73,33 +73,33 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
         self._name = "{} Heating".format(get_location(device_data))
         self._group = device_data["location_name"]
         self._type = device_data["operation"]["type"]
-        self._current_temperature = int(device_data["operation"]["current_temp"])
-        self._target_temperature = int(device_data["operation"]["set_temp"])
+        self._attr_current_temperature = int(device_data["operation"]["current_temp"])
+        self._attr_target_temperature = int(device_data["operation"]["set_temp"])
 
-        self._temperature_unit = UnitOfTemperature.CELSIUS
-        self._precision = PRECISION_WHOLE
-        self._hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
-        self._preset_modes = [PRESET_NONE, PRESET_AWAY]
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        self._attr_precision = PRECISION_WHOLE
+        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
+        self._attr_preset_modes = [PRESET_NONE, PRESET_AWAY]
 
-        self._current_hvac_mode = (
+        self._attr_hvac_mode = (
             HVACMode.HEAT
             if device_data["operation"]["control"] == "on"
             else HVACMode.OFF
         )
 
-        self._current_preset_mode = (
+        self._attr_preset_mode = (
             PRESET_AWAY if device_data["operation"]["mode"] == "out" else PRESET_NONE
         )
 
-        self._supported_features = (
+        self._attr_supported_features = (
             ClimateEntityFeature.TURN_OFF
             | ClimateEntityFeature.TURN_ON
             | ClimateEntityFeature.TARGET_TEMPERATURE
             | ClimateEntityFeature.PRESET_MODE
         )
         self._enable_turn_on_off_backwards_compatibility = False
-        self._min_temp = 5
-        self._max_temp = 40
+        self._attr_min_temp = 5
+        self._attr_max_temp = 40
 
     @property
     def name(self) -> str:
@@ -109,67 +109,12 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
     @property
     def is_on(self) -> bool | None:
         """Return true if heating system is on."""
-        return self._current_hvac_mode != HVACMode.OFF
+        return self._attr_hvac_mode != HVACMode.OFF
 
     @property
     def unique_id(self) -> str:
         """Return a unique, Home Assistant friendly identifier for this entity."""
         return self.uid
-
-    @property
-    def current_temperature(self):
-        """Return the sensor temperature."""
-        return self._current_temperature
-
-    @property
-    def target_temperature(self):
-        """Return the temperature we try to reach."""
-        return self._target_temperature
-
-    @property
-    def temperature_unit(self):
-        """Return the temperature unit."""
-        return self._temperature_unit
-
-    @property
-    def precision(self):
-        """Return the temperature precision."""
-        return self._precision
-
-    @property
-    def hvac_modes(self):
-        """Return the available HVAC modes."""
-        return self._hvac_modes
-
-    @property
-    def hvac_mode(self):
-        """Return the current HVAC mode."""
-        return self._current_hvac_mode
-
-    @property
-    def preset_modes(self):
-        """Return preset modes."""
-        return self._preset_modes
-
-    @property
-    def preset_mode(self):
-        """Return preset modes."""
-        return self._current_preset_mode
-
-    @property
-    def supported_features(self):
-        """Return supported features."""
-        return self._supported_features
-
-    @property
-    def max_temp(self):
-        """Return maximum available temperature."""
-        return self._max_temp
-
-    @property
-    def min_temp(self):
-        """Return minimum available temperature."""
-        return self._min_temp
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -181,27 +126,27 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
     def set_temperature(self, **kwargs: Any):
         """Set new target temperature."""
         temp = kwargs.get(ATTR_TEMPERATURE)
-        if temp and self._target_temperature == int(temp):
+        if temp and self._attr_target_temperature == int(temp):
             return
-        if self._current_hvac_mode == HVACMode.OFF:
+        if self._attr_hvac_mode == HVACMode.OFF:
             self.turn_on()
         self.control_set_temperature(temp)
 
     def set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
-        if self._current_hvac_mode == hvac_mode:
+        if self._attr_hvac_mode == hvac_mode:
             return
         if hvac_mode == HVACMode.HEAT:
             self.turn_on()
         elif hvac_mode == HVACMode.OFF:
             self.turn_off()
-        self._current_hvac_mode = hvac_mode
+        self._attr_hvac_mode = hvac_mode
 
     def set_preset_mode(self, preset_mode):
         """Set new target preset mode."""
-        if preset_mode == self._current_preset_mode:
+        if preset_mode == self._attr_preset_mode:
             return
-        if self._current_hvac_mode == HVACMode.OFF:
+        if self._attr_hvac_mode == HVACMode.OFF:
             self.turn_on()
         self.control_set_mode(preset_mode)
 
@@ -214,7 +159,7 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._current_preset_mode = preset_mode
+            self._attr_preset_mode = preset_mode
 
         self.schedule_update_ha_state()
 
@@ -227,7 +172,7 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._target_temperature = int(temp)
+            self._attr_target_temperature = int(temp)
 
         self.schedule_update_ha_state()
 
@@ -237,7 +182,7 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._current_hvac_mode = HVACMode.HEAT
+            self._attr_hvac_mode = HVACMode.HEAT
 
         self.schedule_update_ha_state()
 
@@ -247,7 +192,7 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._current_hvac_mode = HVACMode.OFF
+            self._attr_hvac_mode = HVACMode.OFF
 
         self.schedule_update_ha_state()
 
@@ -260,14 +205,12 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
             and data["data"]["devices"][0]["uid"] == self.uid
         ):
             operation = data["data"]["devices"][0]["operation"]
-            self._current_hvac_mode = (
+            self._attr_hvac_mode = (
                 HVACMode.HEAT if operation["control"] == "on" else HVACMode.OFF
             )
-            self._current_preset_mode = (
-                PRESET_AWAY if operation["mode"] == "out" else None
-            )
-            self._current_temperature = int(operation["current_temp"])
-            self._target_temperature = int(operation["set_temp"])
+            self._attr_preset_mode = PRESET_AWAY if operation["mode"] == "out" else None
+            self._attr_current_temperature = int(operation["current_temp"])
+            self._attr_target_temperature = int(operation["set_temp"])
 
         self.async_write_ha_state()
 
@@ -286,15 +229,17 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
         self._group = device_data["location_name"]
         self._type = device_data["operation"]["type"]
 
-        self._current_temperature = self.parse_temp(
+        self._attr_current_temperature = self.parse_temp(
             device_data["operation"]["current_temp"]
         )
 
-        self._target_temperature = self.parse_temp(device_data["operation"]["set_temp"])
+        self._attr_target_temperature = self.parse_temp(
+            device_data["operation"]["set_temp"]
+        )
 
-        self._temperature_unit = UnitOfTemperature.CELSIUS
-        self._precision = PRECISION_WHOLE
-        self._hvac_modes = [
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        self._attr_precision = PRECISION_WHOLE
+        self._attr_hvac_modes = [
             HVACMode.OFF,
             HVACMode.COOL,
             HVACMode.DRY,
@@ -302,25 +247,25 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
             HVACMode.FAN_ONLY,
         ]
 
-        self._current_hvac_mode = (
+        self._attr_hvac_mode = (
             HVACMode.OFF
             if device_data["operation"]["status"] == "off"
             else STR_TO_HVAC[device_data["operation"]["mode"]]
         )
 
         fan_speed = device_data["operation"]["wind_speed"]
-        self._current_fan_mode = fan_speed if fan_speed else None
-        self._fan_modes = [FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO]
+        self._attr_fan_mode = fan_speed if fan_speed else None
+        self._attr_fan_modes = [FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO]
 
-        self._supported_features = (
+        self._attr_supported_features = (
             ClimateEntityFeature.TURN_OFF
             | ClimateEntityFeature.TURN_ON
             | ClimateEntityFeature.TARGET_TEMPERATURE
             | ClimateEntityFeature.FAN_MODE
         )
         self._enable_turn_on_off_backwards_compatibility = False
-        self._min_temp = 18
-        self._max_temp = 30
+        self._attr_min_temp = 18
+        self._attr_max_temp = 30
 
     @property
     def name(self) -> str:
@@ -330,67 +275,12 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
     @property
     def is_on(self) -> bool | None:
         """Return true if heating system is on."""
-        return self._current_hvac_mode != HVACMode.OFF
+        return self._attr_hvac_mode != HVACMode.OFF
 
     @property
     def unique_id(self) -> str:
         """Return a unique, Home Assistant friendly identifier for this entity."""
         return self.uid
-
-    @property
-    def current_temperature(self):
-        """Return the sensor temperature."""
-        return self._current_temperature
-
-    @property
-    def target_temperature(self):
-        """Return the temperature we try to reach."""
-        return self._target_temperature
-
-    @property
-    def temperature_unit(self):
-        """Return the temperature unit."""
-        return self._temperature_unit
-
-    @property
-    def precision(self):
-        """Return the temperature precision."""
-        return self._precision
-
-    @property
-    def hvac_modes(self):
-        """Return the available HVAC modes."""
-        return self._hvac_modes
-
-    @property
-    def hvac_mode(self):
-        """Return the current HVAC mode."""
-        return self._current_hvac_mode
-
-    @property
-    def fan_modes(self):
-        """Return the available fan modes."""
-        return self._fan_modes
-
-    @property
-    def fan_mode(self):
-        """Return the current fan mode."""
-        return self._current_fan_mode
-
-    @property
-    def supported_features(self):
-        """Return supported features."""
-        return self._supported_features
-
-    @property
-    def max_temp(self):
-        """Return maximum available temperature."""
-        return self._max_temp
-
-    @property
-    def min_temp(self):
-        """Return minimum available temperature."""
-        return self._min_temp
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -408,29 +298,29 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
     def set_temperature(self, **kwargs: Any):
         """Set new target temperature."""
         temp = kwargs.get(ATTR_TEMPERATURE)
-        if temp and self._target_temperature == int(temp):
+        if temp and self._attr_target_temperature == int(temp):
             return
-        if self._current_hvac_mode == HVACMode.OFF:
+        if self._attr_hvac_mode == HVACMode.OFF:
             self.turn_on()
         self.control_set_temperature(temp)
 
     def set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
-        if self._current_hvac_mode == hvac_mode:
+        if self._attr_hvac_mode == hvac_mode:
             return
         if hvac_mode == HVACMode.OFF:
             self.turn_off()
             return
 
-        if self._current_hvac_mode == HVACMode.OFF:
+        if self._attr_hvac_mode == HVACMode.OFF:
             self.turn_on()
         self.control_set_mode(hvac_mode)
 
     def set_fan_mode(self, fan_mode):
         """Set new target fan mode."""
-        if self._current_fan_mode == fan_mode:
+        if self._attr_fan_mode == fan_mode:
             return
-        if self._current_hvac_mode == HVACMode.OFF:
+        if self._attr_hvac_mode == HVACMode.OFF:
             self.turn_on()
         self.control_set_fan(fan_mode)
 
@@ -443,7 +333,7 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._current_hvac_mode = mode
+            self._attr_hvac_mode = mode
 
         self.schedule_update_ha_state()
 
@@ -456,7 +346,7 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._current_fan_mode = fan_mode
+            self._attr_fan_mode = fan_mode
 
         self.schedule_update_ha_state()
 
@@ -469,7 +359,7 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._target_temperature = int(temp)
+            self._attr_target_temperature = int(temp)
 
         self.schedule_update_ha_state()
 
@@ -479,7 +369,7 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._current_hvac_mode = HVACMode.AUTO
+            self._attr_hvac_mode = HVACMode.AUTO
 
         self.schedule_update_ha_state()
 
@@ -489,7 +379,7 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
 
         response = self.coordinator.request_ajax("/device/control.ajax", body)
         if response["result"]:
-            self._current_hvac_mode = HVACMode.OFF
+            self._attr_hvac_mode = HVACMode.OFF
 
         self.schedule_update_ha_state()
 
@@ -502,14 +392,14 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
             and data["data"]["devices"][0]["uid"] == self.uid
         ):
             operation = data["data"]["devices"][0]["operation"]
-            self._current_hvac_mode = (
+            self._attr_hvac_mode = (
                 HVACMode.OFF
                 if operation["status"] == "off"
                 else STR_TO_HVAC[operation["mode"]]
             )
             fan = operation["wind_speed"]
-            self._current_fan_mode = fan if fan else None
-            self._current_temperature = self.parse_temp(operation["current_temp"])
-            self._target_temperature = self.parse_temp(operation["set_temp"])
+            self._attr_fan_mode = fan if fan else None
+            self._attr_current_temperature = self.parse_temp(operation["current_temp"])
+            self._attr_target_temperature = self.parse_temp(operation["set_temp"])
 
         self.async_write_ha_state()
