@@ -31,7 +31,7 @@ class Credentials:
         self.username = username
         self.password = password
         self.device_id = None
-        self.websocket = None
+        self.websocket_keys_json = None
         self.csrf = None
         self.daelim_elife = None
         self.expire_time = None
@@ -108,8 +108,8 @@ class Credentials:
         return content
 
     def websocket_keys_json(self, force_refresh=False):
-        if self.websocket and not force_refresh:
-            return self.websocket
+        if self.websocket_keys_json and not force_refresh:
+            return self.websocket_keys_json
         self.ensure_logged_in()
         html = self.main_home_html(force_refresh)
         keys = {}
@@ -120,8 +120,8 @@ class Credentials:
                 keys[key] = match[1]
             else:
                 raise Exception(f"Cannot find {key}!")
-        self.websocket = keys
-        return self.websocket
+        self.websocket_keys_json = keys
+        return self.websocket_keys_json
 
     def get_csrf(self):
         return self.csrf
