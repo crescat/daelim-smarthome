@@ -24,12 +24,10 @@ from .helper import request_ajax, get_html, Credentials
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
-    Platform.LIGHT,
+    Platform.BINARY_SENSOR,
     Platform.CLIMATE,
+    Platform.LIGHT,
     Platform.SWITCH,
-    # Platform.SENSOR,
-    # Platform.FAN,
-    # Platform.SWITCH,
 ]
 
 
