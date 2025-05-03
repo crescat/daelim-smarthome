@@ -95,9 +95,11 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         html = await self.hass.async_add_executor_job(self.credentials.main_home_html)
         self.device_list = self.find_device_list_from_html(html)
         await self.hass.async_add_executor_job(self.fix_heat_datas)
-
+        websocket_keys = await self.hass.async_add_executor_job(
+            self.credentials.websocket_keys_json
+        )
         self.hass.async_create_background_task(
-            self._connect_websocket(), "daelim-websocket"
+            self._connect_websocket(websocket_keys), "daelim-websocket"
         )
 
     def fix_heat_datas(self):
@@ -111,12 +113,9 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 if resp["result"]:
                     device["operation"] = resp["data"]
 
-    async def _connect_websocket(self):
+    async def _connect_websocket(self, websocket_keys):
         """Establish WebSocket connection."""
         url = "wss://smartelife.apt.co.kr/ws/data"
-        websocket_keys = await self.hass.async_add_executor_job(
-            self.credentials.websocket_keys_json
-        )
         data = websocket_keys | {
             "data": [
                 {"type": "light"},
