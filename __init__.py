@@ -90,6 +90,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         pass
 
     async def _async_setup(self):
+        # works after hass version 2024.8
         html = await self.hass.async_add_executor_job(self.credentials.main_home_html)
         self.device_list = self.find_device_list_from_html(html)
         await self.hass.async_add_executor_job(self.fix_heat_datas)

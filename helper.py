@@ -31,7 +31,7 @@ class Credentials:
         self.username = username
         self.password = password
         self.device_id = None
-        self.websocket_keys_json = None
+        self.websocket_keys = None
         self.csrf = None
         self.daelim_elife = None
         self.expire_time = None
@@ -40,7 +40,7 @@ class Credentials:
     def from_dict(cls, dict):
         cred = cls(dict["username"], dict["password"])
         cred.device_id = dict["device_id"]
-        cred.websocket_keys_json = dict.get("websocket_keys_json")
+        cred.websocket_keys = dict.get("websocket_keys")
         cred.csrf = dict.get("csrf")
         cred.daelim_elife = dict.get("daelim_elife")
         cred.expire_time = dict.get("expire_time") and datetime.datetime.fromtimestamp(
@@ -53,7 +53,7 @@ class Credentials:
             "username": self.username,
             "password": self.password,
             "device_id": self.device_id,
-            "websocket_keys_json": self.websocket_keys_json,
+            "websocket_keys": self.websocket_keys,
             "csrf": self.csrf,
             "daelim_elife": self.daelim_elife,
             "expire_time": self.expire_time.timestamp() if self.expire_time else None,
@@ -108,8 +108,8 @@ class Credentials:
         return content
 
     def websocket_keys_json(self, force_refresh=False):
-        if self.websocket_keys_json and not force_refresh:
-            return self.websocket_keys_json
+        if self.websocket_keys and not force_refresh:
+            return self.websocket_keys
         self.ensure_logged_in()
         html = self.main_home_html(force_refresh)
         keys = {}
@@ -120,8 +120,8 @@ class Credentials:
                 keys[key] = match[1]
             else:
                 raise Exception(f"Cannot find {key}!")
-        self.websocket_keys_json = keys
-        return self.websocket_keys_json
+        self.websocket_keys = keys
+        return self.websocket_keys
 
     def get_csrf(self):
         return self.csrf
