@@ -17,6 +17,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import update_coordinator
 from homeassistant.helpers import device_registry as dr
+from homeassistant.util.ssl import get_default_context
 
 from .const import DOMAIN
 from .helper import request_ajax, get_html, Credentials
@@ -64,6 +65,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         self.entry = entry
         self.credentials = credentials
         self.device_list = []
+        self.ssl_context = get_default_context()
 
     def request_device_status(self, device_uid, device_type):
         return self.request_ajax(
@@ -117,6 +119,14 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 if resp["result"]:
                     device["operation"] = resp["data"]
 
+    def send_notification(self, title, message, notification_id=None):
+        """Send a notification to the user."""
+        self.hass.components.persistent_notification.async_create(
+            message,
+            title=title,
+            notification_id=notification_id if notification_id else "daelim_smarthome",
+        )
+
     async def _connect_websocket(self, websocket_keys):
         """Establish WebSocket connection."""
         url = "wss://smartelife.apt.co.kr/ws/data"
@@ -134,14 +144,14 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
         while True:
             try:
-                async with connect(url) as websocket:
+                async with connect(url, ssl=self.ssl_context) as websocket:
                     await websocket.send(json_data)
                     while True:
                         message = await websocket.recv()
                         message = json.loads(message)
                         should_exit = await self.handle_websocket_message(message)
                         if should_exit:
-                            break
+                            return
 
             except websockets.exceptions.ConnectionClosed:
                 # restart connection
@@ -152,6 +162,16 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 pass
 
     async def websocket_token_expired(self, _event_data):
+        # send notification with current date and time
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.send_notification(
+            "Daelim WebSocket Token Expired",
+            f"The WebSocket token has expired at {now}. Reconnecting in 5 minutes.",
+            "daelim_websocket_token_expired",
+        )
+
+        await asyncio.sleep(300)  # wait for 5 minutes before reconnecting
+
         websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json, True
         )
