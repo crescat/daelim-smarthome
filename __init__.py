@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import update_coordinator
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util.ssl import get_default_context
+from homeassistant.components import persistent_notification
 
 from .const import DOMAIN
 from .helper import request_ajax, get_html, Credentials
@@ -121,7 +122,8 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
     def send_notification(self, title, message, notification_id=None):
         """Send a notification to the user."""
-        self.hass.components.persistent_notification.async_create(
+        persistent_notification.async_create(
+            self.hass,
             message,
             title=title,
             notification_id=notification_id if notification_id else "daelim_smarthome",
