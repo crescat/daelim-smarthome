@@ -95,7 +95,9 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
     async def _async_setup(self):
         # works after hass version 2024.8
-        html = await self.hass.async_add_executor_job(self.credentials.main_home_html)
+        html = await self.hass.async_add_executor_job(
+            self.credentials.main_home_html, True
+        )
         self.device_list = self.find_device_list_from_html(html)
         await self.hass.async_add_executor_job(self.fix_heat_datas)
 
@@ -167,12 +169,12 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 _LOGGER.error("SSL error occurred, reconnecting...")
                 pass
 
-    async def websocket_token_expired(self, _event_data):
+    async def websocket_token_expired(self, event_data):
         # send notification with current date and time
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.send_notification(
             "Daelim WebSocket Token Expired",
-            f"The WebSocket token has expired at {now}. Reconnecting in 1 minutes.",
+            f"The WebSocket token has expired at {now}. Last message: {event_data}, Reconnecting in 1 minutes.",
             "daelim_websocket_token_expired",
         )
         await asyncio.sleep(60)  # wait for 1 minutes before reconnecting
@@ -190,11 +192,11 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         has_normal_msg = (
             "result" in message
             and message["result"]["message"] == MESSAGE_WEBSOCKET_STATUS_NORMAL
-        )
+        ) or "action" in message
 
         if not has_normal_msg:
             _LOGGER.debug("Received websocket message: %s", message)
-            self.hass.bus.fire("daelim_websocket_token_expired")
+            self.hass.bus.fire("daelim_websocket_token_expired", event_data=message)
             return True
 
         if "data" in message:
