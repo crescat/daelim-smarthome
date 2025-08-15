@@ -158,10 +158,13 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
             except websockets.exceptions.ConnectionClosed:
                 # restart connection
+                _LOGGER.debug("WebSocket connection closed, reconnecting...")
                 pass
             except TimeoutError:
+                _LOGGER.debug("WebSocket connection timed out, reconnecting...")
                 pass
             except ssl.SSLError:
+                _LOGGER.error("SSL error occurred, reconnecting...")
                 pass
 
     async def websocket_token_expired(self, _event_data):
@@ -184,16 +187,16 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
     async def handle_websocket_message(self, message) -> bool:
         """Handle incoming WebSocket messages. Return true to exit loop"""
 
-        has_not_normal_msg = (
+        has_normal_msg = (
             "result" in message
-            and message["result"]["message"] != MESSAGE_WEBSOCKET_STATUS_NORMAL
+            and message["result"]["message"] == MESSAGE_WEBSOCKET_STATUS_NORMAL
         )
 
-        if has_not_normal_msg:
+        if not has_normal_msg:
+            _LOGGER.debug("Received websocket message: %s", message)
             self.hass.bus.fire("daelim_websocket_token_expired")
             return True
 
-        _LOGGER.debug("Received websocket message: %s", message)
         if "data" in message:
             processed_message = {}
             for device in message["data"]["devices"]:
