@@ -169,10 +169,10 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.send_notification(
             "Daelim WebSocket Token Expired",
-            f"The WebSocket token has expired at {now}. Reconnecting in 5 minutes.",
+            f"The WebSocket token has expired at {now}. Reconnecting in 1 minutes.",
             "daelim_websocket_token_expired",
         )
-        await asyncio.sleep(300)  # wait for 5 minutes before reconnecting
+        await asyncio.sleep(60)  # wait for 1 minutes before reconnecting
 
         websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json, True
