@@ -35,6 +35,7 @@ class Credentials:
         self.csrf = None
         self.daelim_elife = None
         self.expire_time = None
+        self.saved = False
 
     @classmethod
     def from_dict(cls, dict):
@@ -46,9 +47,11 @@ class Credentials:
         cred.expire_time = dict.get("expire_time") and datetime.datetime.fromtimestamp(
             dict["expire_time"]
         )
+        cred.saved = True
         return cred
 
     def to_dict(self):
+        self.saved = True
         return {
             "username": self.username,
             "password": self.password,
@@ -69,6 +72,7 @@ class Credentials:
         )
         self.daelim_elife = response["daelim_elife"]
         self.expire_time = get_expire_time(self.daelim_elife)
+        self.saved = False
 
     def refresh_csrf(self):
         response = request_ajax("/common/nativeToken.ajax", {}, {})
@@ -79,6 +83,7 @@ class Credentials:
         if not self.expire_time or now > self.expire_time or not self.daelim_elife:
             self.refresh_csrf()
             self.login()
+            self.saved = False
 
     def bearer_token(self):
         self.ensure_logged_in()
@@ -121,6 +126,7 @@ class Credentials:
             else:
                 raise Exception(f"Cannot find {key}!")
         self.websocket_keys = keys
+        self.saved = False
         return self.websocket_keys
 
     def get_csrf(self):
