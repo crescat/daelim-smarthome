@@ -104,7 +104,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         )
 
         websocket_keys = await self.hass.async_add_executor_job(
-            self.credentials.websocket_keys_json
+            self.credentials.websocket_keys_json, True
         )
         self.hass.async_create_background_task(
             self._connect_websocket(websocket_keys), "daelim-websocket"
