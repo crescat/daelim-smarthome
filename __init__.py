@@ -74,21 +74,12 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             "/controls/device/status.ajax", {"uid": device_uid, "type": device_type}
         )
 
-    def save_credentials(self):
-        """Save credentials to the config entry."""
-        if self.credentials.saved:
-            return
-        self.entry.data["credentials"] = self.credentials.to_dict()
-        self.hass.config_entries.async_update_entry(self.entry)
-
     def request_ajax(self, url, json_data):
         header = self.credentials.daelim_header()
-        # self.save_credentials()
         return request_ajax(url, header, json_data)
 
     def get_html(self, path):
         bearer_token = self.credentials.bearer_token()
-        # self.save_credentials()
         return get_html(path, {"Authorization": f"Bearer {bearer_token}"}).text
 
     def find_device_list_from_html(self, html):
@@ -113,7 +104,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         )
 
         websocket_keys = await self.hass.async_add_executor_job(
-            self.credentials.websocket_keys_json
+            self.credentials.websocket_keys_json, True
         )
         self.hass.async_create_background_task(
             self._connect_websocket(websocket_keys), "daelim-websocket"
@@ -189,7 +180,6 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json, True
         )
-        # self.save_credentials()
         self.hass.async_create_background_task(
             self._connect_websocket(websocket_keys), "daelim-websocket"
         )
