@@ -35,6 +35,7 @@ PLATFORMS: list[Platform] = [
 
 MESSAGE_LOGGED_OUT = "장시간 미사용으로 로그아웃 되었습니다."
 MESSAGE_WEBSOCKET_TOKEN_EXPIRED = "만료된 클라우드토큰 입니다."
+MESSAGE_WEBSOCKET_STATUS_NORMAL = "정상"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -171,7 +172,6 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             f"The WebSocket token has expired at {now}. Reconnecting in 5 minutes.",
             "daelim_websocket_token_expired",
         )
-
         await asyncio.sleep(300)  # wait for 5 minutes before reconnecting
 
         websocket_keys = await self.hass.async_add_executor_job(
@@ -184,18 +184,20 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
     async def handle_websocket_message(self, message) -> bool:
         """Handle incoming WebSocket messages. Return true to exit loop"""
 
-        has_expire_msg = (
+        has_not_normal_msg = (
             "result" in message
-            and message["result"]["message"] == MESSAGE_WEBSOCKET_TOKEN_EXPIRED
+            and message["result"]["message"] != MESSAGE_WEBSOCKET_STATUS_NORMAL
         )
-        if has_expire_msg:
+
+        if has_not_normal_msg:
             self.hass.bus.fire("daelim_websocket_token_expired")
             return True
 
-        if "header" in message:
-            # this is a response, ignore it
-            pass
-        elif "action" in message:
-            _LOGGER.debug("Received websocket message: %s", message)
-            self.async_set_updated_data(message)
+        _LOGGER.debug("Received websocket message: %s", message)
+        if "data" in message:
+            processed_message = {}
+            for device in message["data"]["devices"]:
+                processed_message[device["uid"]] = device.get("operation", {})
+            self.async_set_updated_data(processed_message)
+
         return False

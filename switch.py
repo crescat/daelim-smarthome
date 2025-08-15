@@ -105,9 +105,6 @@ class DaelimAllOffSwitch(CoordinatorEntity, SwitchEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data
-        if (
-            data["action"] == "event_alloffswitch"
-            and data["data"]["devices"][0]["uid"] == self.uid
-        ):
-            self._state = data["data"]["devices"][0]["operation"]["status"] == "on"
-        self.async_write_ha_state()
+        if self.uid in data:
+            self._state = data[self.uid]["status"] == "on"
+            self.async_write_ha_state()

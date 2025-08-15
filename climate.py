@@ -200,11 +200,8 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         data = self.coordinator.data
-        if (
-            data["action"] == "event_heat"
-            and data["data"]["devices"][0]["uid"] == self.uid
-        ):
-            operation = data["data"]["devices"][0]["operation"]
+        if self.uid in data:
+            operation = data[self.uid]
             self._attr_hvac_mode = (
                 HVACMode.HEAT if operation["control"] == "on" else HVACMode.OFF
             )
@@ -212,7 +209,7 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
             self._attr_current_temperature = int(operation["current_temp"])
             self._attr_target_temperature = int(operation["set_temp"])
 
-        self.async_write_ha_state()
+            self.async_write_ha_state()
 
 
 class DaelimAC(CoordinatorEntity, ClimateEntity):
@@ -387,11 +384,8 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         data = self.coordinator.data
-        if (
-            data["action"] == "event_aircon"
-            and data["data"]["devices"][0]["uid"] == self.uid
-        ):
-            operation = data["data"]["devices"][0]["operation"]
+        if self.uid in data:
+            operation = data[self.uid]
             self._attr_hvac_mode = (
                 HVACMode.OFF
                 if operation["status"] == "off"
@@ -402,4 +396,4 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
             self._attr_current_temperature = self.parse_temp(operation["current_temp"])
             self._attr_target_temperature = self.parse_temp(operation["set_temp"])
 
-        self.async_write_ha_state()
+            self.async_write_ha_state()

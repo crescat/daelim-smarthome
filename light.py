@@ -83,7 +83,6 @@ class DaelimLight(CoordinatorEntity, LightEntity):
     def turn_on(self, **kwargs: Any) -> None:
         """Instruct the light to turn on."""
         body = {"type": self._type, "uid": self.uid, "control": "on"}
-
         response = self.coordinator.request_ajax("/device/control/all.ajax", body)
         if response["result"]:
             self._state = True
@@ -92,7 +91,6 @@ class DaelimLight(CoordinatorEntity, LightEntity):
     def turn_off(self, **kwargs: Any) -> None:
         """Instruct the light to turn off."""
         body = {"type": self._type, "uid": self.uid, "control": "off"}
-
         response = self.coordinator.request_ajax("/device/control/all.ajax", body)
         if response["result"]:
             self._state = False
@@ -101,9 +99,6 @@ class DaelimLight(CoordinatorEntity, LightEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data
-        if (
-            data["action"] == "event_light"
-            and data["data"]["devices"][0]["uid"] == self.uid
-        ):
-            self._state = data["data"]["devices"][0]["operation"]["status"] == "on"
-        self.async_write_ha_state()
+        if self.uid in data:
+            self._state = data[self.uid]["status"] == "on"
+            self.async_write_ha_state()

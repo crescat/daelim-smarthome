@@ -75,11 +75,6 @@ class DaelimDoorSensor(CoordinatorEntity, BinarySensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         data = self.coordinator.data
-        if (
-            data["action"] == "event_smartdoor"
-            and data["data"]["devices"][0]["uid"] == self.uid
-        ):
-            self._attr_is_on = (
-                data["data"]["devices"][0]["operation"]["status"] == "open"
-            )
-        self.async_write_ha_state()
+        if self.uid in data:
+            self._attr_is_on = data[self.uid]["status"] == "open"
+            self.async_write_ha_state()
