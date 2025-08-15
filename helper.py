@@ -76,7 +76,7 @@ class Credentials:
 
     def ensure_logged_in(self):
         now = datetime.datetime.now()
-        if not self.expire_time or now > self.expire_time:
+        if not self.expire_time or now > self.expire_time or not self.daelim_elife:
             self.refresh_csrf()
             self.login()
 
@@ -182,6 +182,9 @@ def request_ajax(path, header, params):
 
     s.mount(API_PREFIX, HTTPAdapter(max_retries=retries))
     response = s.post(url, headers=header, json=params, timeout=TIMEOUT)
+
+    if "content-type" not in response.headers:
+        raise TypeError("response has no content-type header")
 
     content_type = response.headers["content-type"]
     if "application/json" in content_type:
