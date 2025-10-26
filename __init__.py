@@ -113,7 +113,10 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         return None
 
     async def _async_update_data(self):
-        pass
+        car_data = await self.hass.async_add_executor_job(self.get_car_data)
+        if car_data:
+            return {"car": car_data}
+        return dict()
 
     async def _async_setup(self):
         # works after hass version 2024.8

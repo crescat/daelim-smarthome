@@ -130,13 +130,13 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
             identifiers={(DOMAIN, self._group)},
         )
 
-    async def _async_update(self):
-        data_list = await self.coordinator.hass.async_add_executor_job(
-            self.coordinator.get_car_data
-        )
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        data = self.coordinator.data
 
-        if data_list:
-            for car_data in data_list:
+        if "car" in data:
+            for car_data in data["car"]:
                 if car_data["tag_num"] == self.car_number:
                     self._attr_is_on = car_data["in_complex"] == "y"
                     date_str = car_data.get("datetime")
@@ -148,5 +148,5 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
                             else None,
                         }
                     )
-                    break
-        self.async_write_ha_state()
+                    self.async_write_ha_state()
+                    return
