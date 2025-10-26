@@ -68,15 +68,18 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         self.credentials = credentials
         self.device_list = []
         self.ssl_context = get_default_context()
+        self.websocket_keys = None
 
     def request_device_status(self, device_uid, device_type):
         return self.request_ajax(
             "/controls/device/status.ajax", {"uid": device_uid, "type": device_type}
         )
 
-    def request_ajax(self, url, json_data):
-        header = self.credentials.daelim_header()
-        return request_ajax(url, header, json_data)
+    def request_ajax(self, url, json_data, header=None):
+        daelim_header = self.credentials.daelim_header()
+        if header:
+            daelim_header.update(header)
+        return request_ajax(url, daelim_header, json_data)
 
     def get_html(self, path):
         bearer_token = self.credentials.bearer_token()
@@ -90,6 +93,26 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         _LOGGER.warning("failed to find device list\n\n{}", html)
         raise Exception("Cannot find device list!")
 
+    def find_elevator_uid(self, html):
+        # data: JSON.stringify({
+        # "header": {
+        #     "category": "elevator",
+        #     "type": "call",
+        #     "command": "control_request"
+        # },
+        # "data" : {
+        #     "uid": "CMF990100",
+        #     "operation": {
+        #         "control": "down"
+        #     }
+        # },
+        regex = r'"category": "elevator",\s+"type": "call",\s+"command": "control_request"\s+},\s+"data" : {\s+"uid": "([^"]+)"'
+        match = re.search(regex, html)
+        if match:
+            return match.group(1)
+        _LOGGER.warning("failed to find elevator uid\n\n{}", html)
+        return None
+
     async def _async_update_data(self):
         pass
 
@@ -99,16 +122,32 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             self.credentials.main_home_html, True
         )
         self.device_list = self.find_device_list_from_html(html)
+        elevator_uid = self.find_elevator_uid(html)
+        if elevator_uid:
+            self.device_list.append(
+                {
+                    "type": "elevator",
+                    "devices": [
+                        {
+                            "uid": elevator_uid,
+                            "group": "Elevator",
+                        }
+                    ],
+                }
+            )
+
         await self.hass.async_add_executor_job(self.fix_heat_datas)
 
         self.hass.bus.async_listen(
             "daelim_websocket_token_expired", self.websocket_token_expired
         )
 
-        websocket_keys = await self.hass.async_add_executor_job(
+        self.websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json, True
         )
         self.hass.async_create_background_task(
+            self._connect_websocket(), "daelim-websocket"
+        )
             self._connect_websocket(websocket_keys), "daelim-websocket"
         )
 
@@ -132,10 +171,10 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             notification_id=notification_id if notification_id else "daelim_smarthome",
         )
 
-    async def _connect_websocket(self, websocket_keys):
+    async def _connect_websocket(self):
         """Establish WebSocket connection."""
         url = "wss://smartelife.apt.co.kr/ws/data"
-        data = websocket_keys | {
+        data = self.websocket_keys | {
             "data": [
                 {"type": "light"},
                 {"type": "heat"},
@@ -179,11 +218,11 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         )
         await asyncio.sleep(60)  # wait for 1 minutes before reconnecting
 
-        websocket_keys = await self.hass.async_add_executor_job(
+        self.websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json, True
         )
         self.hass.async_create_background_task(
-            self._connect_websocket(websocket_keys), "daelim-websocket"
+            self._connect_websocket(self.websocket_keys), "daelim-websocket"
         )
 
     async def handle_websocket_message(self, message) -> bool:
