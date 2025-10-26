@@ -1,12 +1,14 @@
 This Repo contains a working custom integration for Daelim E-life smart home system.
 
-What's included:
+What's working:
 
 - light
 - heating
-- air conditioning
+- air conditioning (possibly buggy)
 - door lock (only status)
 - all-off switch
+- elevator call button
+- car presence
 
 To setup:
 
