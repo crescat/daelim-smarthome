@@ -46,10 +46,8 @@ class DaelimElevatorCallButton(CoordinatorEntity, ButtonEntity):
         self.coordinator = coordinator
 
         self.entity_id = "button." + self.uid
-        self._name = "Elevator Call"
-
-        self._state = device_data["operation"]["status"] == "on"
-        self._group = get_location(device_data)
+        self._name = "Call Elevator"
+        self._group = "Elevator"
 
     @property
     def name(self) -> str:
@@ -72,9 +70,12 @@ class DaelimElevatorCallButton(CoordinatorEntity, ButtonEntity):
 
     def press(self) -> None:
         """Handle the button press."""
-        header = {"category": "elevator", "type": "call", "command": "control_request"}
-
-        body = {"uid": self.uid, "operation": {"control": "down"}}
-        _response = self.coordinator.request_ajax(
-            "/device/control/all.ajax", body, header
-        )
+        body = {
+            "header": {
+                "category": "elevator",
+                "type": "call",
+                "command": "control_request",
+            },
+            "data": {"uid": self.uid, "operation": {"control": "down"}},
+        }
+        _response = self.coordinator.request_ajax("/common/data.ajax", body)

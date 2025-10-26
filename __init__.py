@@ -30,6 +30,7 @@ PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
     Platform.LIGHT,
     Platform.SWITCH,
+    Platform.BUTTON,
 ]
 
 
@@ -75,10 +76,8 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             "/controls/device/status.ajax", {"uid": device_uid, "type": device_type}
         )
 
-    def request_ajax(self, url, json_data, header=None):
+    def request_ajax(self, url, json_data):
         daelim_header = self.credentials.daelim_header()
-        if header:
-            daelim_header.update(header)
         return request_ajax(url, daelim_header, json_data)
 
     def get_html(self, path):
@@ -159,21 +158,23 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             self._connect_websocket(), "daelim-websocket"
         )
 
-    async def get_car_data(self):
+    def get_car_data(self):
         url = "/monitoring/locationList.ajax"
-        header = {
-            "category": "board",
-            "type": "location_list",
-            "command": "query_request",
+        body = {
+            "header": {
+                "category": "board",
+                "type": "location_list",
+                "command": "query_request",
+            },
+            "data": {
+                "roomkey": self.websocket_keys["roomKey"],
+                "userkey": self.websocket_keys["userKey"],
+                "location_type": "car",
+            },
         }
-        data = {
-            "roomkey": self.websocket_keys["roomKey"],
-            "userkey": self.websocket_keys["userKey"],
-            "location_type": "car",
-        }
-        resp = await self.hass.async_add_executor_job(
-            self.request_ajax, url, data, header
-        )
+
+        resp = self.request_ajax(url, body)
+
         if resp["result"]["status"] != "000":
             _LOGGER.warning("failed to get car data: %s", resp)
             return None
@@ -268,7 +269,9 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
         if "data" in message:
             processed_message = {}
-            for device in message["data"]["devices"]:
+            _LOGGER.debug("websocket message data: %s", message["data"])
+            devices = message["data"].get("devices", [])
+            for device in devices:
                 processed_message[device["uid"]] = device.get("operation", {})
             self.async_set_updated_data(processed_message)
 

@@ -96,6 +96,7 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
         self.uid = "".join(
             c if c.isdigit() else f"-{ord(c)}-" for c in device_data["tag_num"]
         )
+        print("setting uop car sensor", self.uid)
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
@@ -130,9 +131,10 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
         )
 
     async def _async_update(self):
-        data_list = self.coordinator.hass.async_add_executor_job(
+        data_list = await self.coordinator.hass.async_add_executor_job(
             self.coordinator.get_car_data
         )
+
         if data_list:
             for car_data in data_list:
                 if car_data["tag_num"] == self.car_number:
@@ -144,7 +146,7 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
                             "parked_since": dateparser.parse(date_str)
                             if date_str
                             else None,
-                        }p
+                        }
                     )
                     break
         self.async_write_ha_state()
