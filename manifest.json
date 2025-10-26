@@ -9,7 +9,7 @@
     "dependencies": [],
     "documentation": "",
     "homekit": {},
-    "iot_class": "local_pushing",
+    "iot_class": "local_pushing, local_polling",
     "requirements": [],
     "ssdp": [],
     "zeroconf": []

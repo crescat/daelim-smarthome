@@ -145,11 +145,39 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         self.websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json, True
         )
+
+        car_data = await self.hass.async_add_executor_job(self.get_car_data)
+        if car_data:
+            self.device_list.append(
+                {
+                    "type": "car",
+                    "devices": car_data,
+                }
+            )
+
         self.hass.async_create_background_task(
             self._connect_websocket(), "daelim-websocket"
         )
-            self._connect_websocket(websocket_keys), "daelim-websocket"
+
+    async def get_car_data(self):
+        url = "/monitoring/locationList.ajax"
+        header = {
+            "category": "board",
+            "type": "location_list",
+            "command": "query_request",
+        }
+        data = {
+            "roomkey": self.websocket_keys["roomKey"],
+            "userkey": self.websocket_keys["userKey"],
+            "location_type": "car",
+        }
+        resp = await self.hass.async_add_executor_job(
+            self.request_ajax, url, data, header
         )
+        if resp["result"]["status"] != "000":
+            _LOGGER.warning("failed to get car data: %s", resp)
+            return None
+        return resp["data"]["list"]
 
     def fix_heat_datas(self):
         for devices in self.device_list:

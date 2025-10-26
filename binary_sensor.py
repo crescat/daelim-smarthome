@@ -17,8 +17,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .helper import get_location
 from .const import DOMAIN
+from dateutil import parser as dateparser
+from datetime import timedelta
 
 _LOGGER = logging.getLogger(__name__)
+SCAN_INTERVAL = timedelta(minutes=5)
 
 
 async def async_setup_entry(
@@ -33,6 +36,11 @@ async def async_setup_entry(
         if devices["type"] == "smartdoor":
             entities += [
                 DaelimDoorSensor(device_data, coordinator)
+                for device_data in devices["devices"]
+            ]
+        if devices["type"] == "car":
+            entities += [
+                DaelimCarSensor(device_data, coordinator)
                 for device_data in devices["devices"]
             ]
 
@@ -78,3 +86,65 @@ class DaelimDoorSensor(CoordinatorEntity, BinarySensorEntity):
         if self.uid in data:
             self._attr_is_on = data[self.uid]["status"] == "open"
             self.async_write_ha_state()
+
+
+class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
+    """Representation of a Daelim Car Sensor."""
+
+    def __init__(self, device_data, coordinator) -> None:
+        """Initialize an DaelimCarSensor."""
+        self.uid = "".join(
+            c if c.isdigit() else f"-{ord(c)}-" for c in device_data["tag_num"]
+        )
+        super().__init__(coordinator, context=self.uid)
+        self.coordinator = coordinator
+
+        self.entity_id = "binary_sensor.car_" + self.uid
+        self.car_number = device_data["tag_num"]
+        self._attr_name = "Car " + self.car_number
+        self._group = "car"
+
+        self._attr_device_class = BinarySensorDeviceClass.PRESENCE
+        self._attr_is_on = device_data["in_complex"] == "y"
+        date_str = device_data.get("datetime")
+
+        self._attr_extra_state_attributes = {
+            "location": device_data.get("location_text"),
+            "parked_since": dateparser.parse(date_str) if date_str else None,
+        }
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique, Home Assistant friendly identifier for this entity."""
+        return self.uid
+
+    @property
+    def should_poll(self) -> bool:
+        return True
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._group)},
+        )
+
+    async def _async_update(self):
+        data_list = self.coordinator.hass.async_add_executor_job(
+            self.coordinator.get_car_data
+        )
+        if data_list:
+            for car_data in data_list:
+                if car_data["tag_num"] == self.car_number:
+                    self._attr_is_on = car_data["in_complex"] == "y"
+                    date_str = car_data.get("datetime")
+                    self._attr_extra_state_attributes.update(
+                        {
+                            "location": car_data.get("location_text"),
+                            "parked_since": dateparser.parse(date_str)
+                            if date_str
+                            else None,
+                        }p
+                    )
+                    break
+        self.async_write_ha_state()
