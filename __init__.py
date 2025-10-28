@@ -239,6 +239,9 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             except ssl.SSLError:
                 _LOGGER.error("SSL error occurred, reconnecting...")
                 pass
+            except websockets.exceptions.InvalidStatus:
+                _LOGGER.error("Invalid status from WebSocket, reconnecting...")
+                pass
 
     async def websocket_token_expired(self, event_data):
         # send notification with current date and time
