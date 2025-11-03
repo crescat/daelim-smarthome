@@ -106,11 +106,12 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
         self._group = "car"
 
         self._attr_device_class = BinarySensorDeviceClass.PRESENCE
-        self._attr_is_on = device_data["in_complex"] == "y"
+        location_text = device_data.get("location_text")
+        self._attr_is_on = location_text is not None and location_text != ""
         date_str = device_data.get("datetime")
 
         self._attr_extra_state_attributes = {
-            "location": device_data.get("location_text"),
+            "location": location_text,
             "parked_since": dateparser.parse(date_str) if date_str else None,
         }
 
@@ -138,11 +139,12 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
         if "car" in data:
             for car_data in data["car"]:
                 if car_data["tag_num"] == self.car_number:
-                    self._attr_is_on = car_data["in_complex"] == "y"
+                    location_text = car_data.get("location_text")
+                    self._attr_is_on = location_text is not None and location_text != ""
                     date_str = car_data.get("datetime")
                     self._attr_extra_state_attributes.update(
                         {
-                            "location": car_data.get("location_text"),
+                            "location": location_text,
                             "parked_since": dateparser.parse(date_str)
                             if date_str
                             else None,
