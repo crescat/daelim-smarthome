@@ -114,7 +114,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
     async def _async_update_data(self):
         car_data = await self.hass.async_add_executor_job(self.get_car_data)
-        if car_data:
+        if car_data is not None:
             return {"car": car_data}
         return dict()
 

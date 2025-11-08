@@ -152,3 +152,5 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
                     )
                     self.async_write_ha_state()
                     return
+            self._attr_is_on = False
+            self.async_write_ha_state()
