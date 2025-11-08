@@ -181,6 +181,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         if resp["result"]["status"] != "000":
             _LOGGER.warning("failed to get car data: %s", resp)
             return None
+        _LOGGER.debug("got car data: %s", resp)
         return resp["data"]["list"]
 
     def fix_heat_datas(self):
