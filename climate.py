@@ -72,7 +72,6 @@ class DaelimHeating(CoordinatorEntity, ClimateEntity):
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
-        self.entity_id = "climate.heating_" + self.uid
         self._name = "{} Heating".format(get_location(device_data))
         self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]
@@ -224,7 +223,6 @@ class DaelimAC(CoordinatorEntity, ClimateEntity):
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
-        self.entity_id = "climate.AC_" + self.uid
         self._name = "{} AC".format(get_location(device_data))
         self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]

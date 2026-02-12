@@ -51,7 +51,6 @@ class DaelimLight(CoordinatorEntity, LightEntity):
         self.coordinator = coordinator
 
         self.device_name = device_data["device_name"]
-        self.entity_id = "light." + self.uid
         self._attr_name = "{} Light {}".format(  # noqa: UP032
             get_location(device_data), self.device_name[-1]
         )

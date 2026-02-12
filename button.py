@@ -45,7 +45,6 @@ class DaelimElevatorCallButton(CoordinatorEntity, ButtonEntity):
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
-        self.entity_id = "button." + self.uid
         self._name = "Call Elevator"
         self._group = "Elevator"
 

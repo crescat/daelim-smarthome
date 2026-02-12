@@ -45,7 +45,6 @@ class DaelimAllOffSwitch(CoordinatorEntity, SwitchEntity):
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
-        self.entity_id = "switch." + self.uid
         self._name = "All off switch"
 
         self._state = device_data["operation"]["status"] == "on"

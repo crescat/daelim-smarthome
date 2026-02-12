@@ -56,7 +56,6 @@ class DaelimDoorSensor(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
-        self.entity_id = "binary_sensor.door_" + self.uid
         self._attr_name = "DoorLock"
         self._group = get_location(device_data)
 
@@ -100,7 +99,6 @@ class DaelimCarSensor(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
-        self.entity_id = "binary_sensor.car_" + self.uid
         self.car_number = device_data["tag_num"]
         self._attr_name = "Car " + self.car_number
         self._group = "car"
