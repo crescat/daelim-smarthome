@@ -207,21 +207,27 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
     async def _connect_websocket(self):
         """Establish WebSocket connection."""
         url = "wss://smartelife.apt.co.kr/ws/data"
-        data = self.websocket_keys | {
-            "data": [
-                {"type": "light"},
-                {"type": "heat"},
-                {"type": "alloffswitch"},
-                {"type": "smartdoor"},
-                {"type": "aircon"},
-                # {"type": "call"},
-            ]
-        }
-        json_data = json.dumps(data)
+        retry_delay = 5
 
         while True:
+            # Build payload each iteration so refreshed keys are picked up
+            json_data = json.dumps(
+                self.websocket_keys
+                | {
+                    "data": [
+                        {"type": "light"},
+                        {"type": "heat"},
+                        {"type": "alloffswitch"},
+                        {"type": "smartdoor"},
+                        {"type": "aircon"},
+                        # {"type": "call"},
+                    ]
+                }
+            )
+
             try:
                 async with connect(url, ssl=self.ssl_context) as websocket:
+                    retry_delay = 5  # reset after a successful connection
                     await websocket.send(json_data)
                     while True:
                         message = await websocket.recv()
@@ -231,18 +237,16 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                             return
 
             except websockets.exceptions.ConnectionClosed:
-                # restart connection
-                _LOGGER.debug("WebSocket connection closed, reconnecting...")
-                pass
+                _LOGGER.debug("WebSocket connection closed, reconnecting in %ss...", retry_delay)
             except TimeoutError:
-                _LOGGER.debug("WebSocket connection timed out, reconnecting...")
-                pass
+                _LOGGER.debug("WebSocket connection timed out, reconnecting in %ss...", retry_delay)
             except ssl.SSLError:
-                _LOGGER.error("SSL error occurred, reconnecting...")
-                pass
+                _LOGGER.error("SSL error occurred, reconnecting in %ss...", retry_delay)
             except websockets.exceptions.InvalidStatus:
-                _LOGGER.error("Invalid status from WebSocket, reconnecting...")
-                pass
+                _LOGGER.error("Invalid status from WebSocket, reconnecting in %ss...", retry_delay)
+
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 300)  # exponential backoff, max 5 min
 
     async def websocket_token_expired(self, event_data):
         # send notification with current date and time
@@ -258,7 +262,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             self.credentials.websocket_keys_json, True
         )
         self.hass.async_create_background_task(
-            self._connect_websocket(self.websocket_keys), "daelim-websocket"
+            self._connect_websocket(), "daelim-websocket"
         )
 
     async def handle_websocket_message(self, message) -> bool:
