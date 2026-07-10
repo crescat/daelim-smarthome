@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import timedelta
 from websockets.asyncio.client import connect
 import logging
-import async_timeout
 import asyncio
 import websockets
 import json
@@ -16,7 +15,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import update_coordinator
-from homeassistant.helpers import device_registry as dr
 from homeassistant.util.ssl import get_default_context
 from homeassistant.components import persistent_notification
 
@@ -37,6 +35,16 @@ PLATFORMS: list[Platform] = [
 MESSAGE_LOGGED_OUT = "장시간 미사용으로 로그아웃 되었습니다."
 MESSAGE_WEBSOCKET_TOKEN_EXPIRED = "만료된 클라우드토큰 입니다."
 MESSAGE_WEBSOCKET_STATUS_NORMAL = "정상"
+
+
+def is_logged_out(response) -> bool:
+    """Whether an ajax response says the server session is gone."""
+    if not isinstance(response, dict):
+        return False
+    result = response.get("result")
+    if not isinstance(result, dict):
+        return False
+    return result.get("message") == MESSAGE_LOGGED_OUT
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -64,6 +72,10 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
             _LOGGER,
             # Name of the data. For logging purposes.
             name="daelim_smarthome",
+            # Periodic polling doubles as a keepalive: it exercises the
+            # login state before a user action has to, so the server
+            # never gets a chance to idle the session out.
+            update_interval=timedelta(minutes=5),
         )
         self.entry = entry
         self.credentials = credentials
@@ -77,8 +89,12 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         )
 
     def request_ajax(self, url, json_data):
-        daelim_header = self.credentials.daelim_header()
-        return request_ajax(url, daelim_header, json_data)
+        response = request_ajax(url, self.credentials.daelim_header(), json_data)
+        if is_logged_out(response):
+            _LOGGER.info("server dropped the session, logging in again")
+            self.credentials.force_login()
+            response = request_ajax(url, self.credentials.daelim_header(), json_data)
+        return response
 
     def get_html(self, path):
         bearer_token = self.credentials.bearer_token()
@@ -140,12 +156,9 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
         await self.hass.async_add_executor_job(self.fix_heat_datas)
 
-        self.hass.bus.async_listen(
-            "daelim_websocket_token_expired", self.websocket_token_expired
-        )
-
+        # the html fetched above is cached, no need to force refresh
         self.websocket_keys = await self.hass.async_add_executor_job(
-            self.credentials.websocket_keys_json, True
+            self.credentials.websocket_keys_json
         )
 
         car_data = await self.hass.async_add_executor_job(self.get_car_data)
@@ -205,69 +218,91 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
         )
 
     async def _connect_websocket(self):
-        """Establish WebSocket connection."""
+        """Keep the push connection alive for the lifetime of the entry.
+
+        This task must never die: whatever goes wrong (network blip,
+        expired cloud token, server hiccup), we back off and connect
+        again. Expired keys are refreshed in-line, so there is no
+        second task or event to get lost.
+        """
         url = "wss://smartelife.apt.co.kr/ws/data"
         retry_delay = 5
 
         while True:
-            # Build payload each iteration so refreshed keys are picked up
-            json_data = json.dumps(
-                self.websocket_keys
-                | {
-                    "data": [
-                        {"type": "light"},
-                        {"type": "heat"},
-                        {"type": "alloffswitch"},
-                        {"type": "smartdoor"},
-                        {"type": "aircon"},
-                        # {"type": "call"},
-                    ]
-                }
-            )
-
             try:
+                # Refetch keys each iteration: a no-op while they are
+                # still tied to the current login session, a cheap
+                # refresh when a re-login elsewhere invalidated them.
+                self.websocket_keys = await self.hass.async_add_executor_job(
+                    self.credentials.websocket_keys_json
+                )
+                subscription = json.dumps(
+                    self.websocket_keys
+                    | {
+                        "data": [
+                            {"type": "light"},
+                            {"type": "heat"},
+                            {"type": "alloffswitch"},
+                            {"type": "smartdoor"},
+                            {"type": "aircon"},
+                            # {"type": "call"},
+                        ]
+                    }
+                )
+
                 async with connect(url, ssl=self.ssl_context) as websocket:
                     retry_delay = 5  # reset after a successful connection
-                    await websocket.send(json_data)
-                    while True:
-                        message = await websocket.recv()
-                        message = json.loads(message)
-                        should_exit = await self.handle_websocket_message(message)
-                        if should_exit:
-                            return
+                    await websocket.send(subscription)
+                    async for raw_message in websocket:
+                        message = json.loads(raw_message)
+                        if not self.handle_websocket_message(message):
+                            # keys rejected: refresh and resubscribe
+                            await self.refresh_websocket_keys(message)
+                            break
 
             except websockets.exceptions.ConnectionClosed:
-                _LOGGER.debug("WebSocket connection closed, reconnecting in %ss...", retry_delay)
-            except TimeoutError:
-                _LOGGER.debug("WebSocket connection timed out, reconnecting in %ss...", retry_delay)
-            except ssl.SSLError:
-                _LOGGER.error("SSL error occurred, reconnecting in %ss...", retry_delay)
-            except websockets.exceptions.InvalidStatus:
-                _LOGGER.error("Invalid status from WebSocket, reconnecting in %ss...", retry_delay)
+                _LOGGER.debug(
+                    "WebSocket connection closed, reconnecting in %ss...", retry_delay
+                )
+            except (
+                OSError,
+                TimeoutError,
+                ssl.SSLError,
+                websockets.exceptions.WebSocketException,
+            ) as err:
+                _LOGGER.warning(
+                    "WebSocket error (%s), reconnecting in %ss...", err, retry_delay
+                )
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected error in websocket task, reconnecting in %ss...",
+                    retry_delay,
+                )
 
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 300)  # exponential backoff, max 5 min
 
-    async def websocket_token_expired(self, event_data):
-        # send notification with current date and time
+    async def refresh_websocket_keys(self, message):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.send_notification(
             "Daelim WebSocket Token Expired",
-            f"The WebSocket token has expired at {now}. Last message: {event_data}, Reconnecting in 1 minutes.",
+            f"The WebSocket token has expired at {now}. Last message: {message}. Refreshing keys and reconnecting.",
             "daelim_websocket_token_expired",
         )
-        await asyncio.sleep(60)  # wait for 1 minutes before reconnecting
-
+        # Refresh keys within the current login session. Never force a
+        # re-login here: a new login invalidates the other requests'
+        # session, which would ping-pong invalidations between the
+        # websocket and the control requests.
         self.websocket_keys = await self.hass.async_add_executor_job(
             self.credentials.websocket_keys_json, True
         )
-        self.hass.async_create_background_task(
-            self._connect_websocket(), "daelim-websocket"
-        )
 
-    async def handle_websocket_message(self, message) -> bool:
-        """Handle incoming WebSocket messages. Return true to exit loop"""
+    def handle_websocket_message(self, message) -> bool:
+        """Handle an incoming WebSocket message.
 
+        Return False when the server rejected our keys (anything but a
+        normal status), signalling the caller to refresh and reconnect.
+        """
         has_normal_msg = (
             "result" in message
             and message["result"]["message"] == MESSAGE_WEBSOCKET_STATUS_NORMAL
@@ -275,8 +310,7 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
 
         if not has_normal_msg:
             _LOGGER.debug("Received websocket message: %s", message)
-            self.hass.bus.fire("daelim_websocket_token_expired", event_data=message)
-            return True
+            return False
 
         if "data" in message:
             processed_message = {}
@@ -286,4 +320,4 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 processed_message[device["uid"]] = device.get("operation", {})
             self.async_set_updated_data(processed_message)
 
-        return False
+        return True

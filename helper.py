@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import requests
+import threading
 import uuid
 from requests.adapters import HTTPAdapter, Retry
 from Crypto.Cipher import AES
@@ -11,6 +12,10 @@ from Crypto import Random
 from .const import TIMEOUT, RETRY, API_PREFIX, KEY, IV, BS
 
 _LOGGER = logging.getLogger(__name__)
+
+# Re-login this long before the token actually expires, so a control
+# request never has to pay the login round trips itself.
+LOGIN_MARGIN = datetime.timedelta(minutes=10)
 
 json_header = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 9_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13C75 DAELIM/IOS",
@@ -27,6 +32,16 @@ html_header = {
 
 
 class Credentials:
+    """The login session with the Daelim cloud.
+
+    The server keeps a single active session per account: a new login
+    invalidates the previous one, including its cloud (websocket)
+    token. So logins are serialized behind a lock, and everything
+    derived from a session (home html, websocket keys) is tagged with
+    a login generation so staleness is detectable without forcing yet
+    another login.
+    """
+
     def __init__(self, username, password):
         self.username = username
         self.password = password
@@ -35,6 +50,11 @@ class Credentials:
         self.csrf = None
         self.daelim_elife = None
         self.expire_time = None
+        self.generation = 0
+        self._keys_generation = None
+        self._home_html = None
+        self._home_html_generation = None
+        self._lock = threading.RLock()
 
     @classmethod
     def from_dict(cls, dict):
@@ -69,59 +89,87 @@ class Credentials:
         )
         self.daelim_elife = response["daelim_elife"]
         self.expire_time = get_expire_time(self.daelim_elife)
+        self.generation += 1
 
     def refresh_csrf(self):
         response = request_ajax("/common/nativeToken.ajax", {}, {})
         self.csrf = response["value"]
 
     def ensure_logged_in(self):
-        now = datetime.datetime.now()
-        if not self.expire_time or now > self.expire_time or not self.daelim_elife:
-            self.refresh_csrf()
-            self.login()
+        with self._lock:
+            now = datetime.datetime.now()
+            if (
+                not self.daelim_elife
+                or not self.expire_time
+                or now > self.expire_time - LOGIN_MARGIN
+            ):
+                self.refresh_csrf()
+                self.login()
+
+    def force_login(self):
+        """Discard local session state and log in again.
+
+        Used when the server rejects a request despite the token
+        looking valid locally (e.g. logged out for inactivity). This
+        invalidates the previous session's cloud token server-side,
+        so use it only when the current session is known dead.
+        """
+        with self._lock:
+            self.daelim_elife = None
+            self.expire_time = None
+            self.ensure_logged_in()
 
     def bearer_token(self):
-        self.ensure_logged_in()
-        now_in_kst = datetime.datetime.now() + datetime.timedelta(hours=9)
-        return encrypt(
-            "{}::{}".format(
-                self.daelim_elife,
-                now_in_kst.strftime("%Y%m%d%H%M%S"),
+        with self._lock:
+            self.ensure_logged_in()
+            now_in_kst = datetime.datetime.now() + datetime.timedelta(hours=9)
+            return encrypt(
+                "{}::{}".format(
+                    self.daelim_elife,
+                    now_in_kst.strftime("%Y%m%d%H%M%S"),
+                )
             )
-        )
 
     def daelim_header(self):
-        self.ensure_logged_in()
-        return {"_csrf": self.csrf, "daelim_elife": self.daelim_elife}
+        with self._lock:
+            self.ensure_logged_in()
+            return {"_csrf": self.csrf, "daelim_elife": self.daelim_elife}
 
-    def main_home_html(self, force_refresh=False, _cache={}):
+    def main_home_html(self, force_refresh=False):
         """also used by coordinator to get device list without re-requesting."""
-        if "value" in _cache and not force_refresh:
-            return _cache["value"]
-        bearer_token = self.bearer_token()
+        with self._lock:
+            self.ensure_logged_in()
+            fresh = self._home_html_generation == self.generation
+            if self._home_html and fresh and not force_refresh:
+                return self._home_html
+            bearer_token = self.bearer_token()
 
-        content = get_html(
-            "/main/home.do", {"Authorization": f"Bearer {bearer_token}"}
-        ).text
-        _LOGGER.debug("Got HTML from /main/home.do\n\n%s", content)
-        _cache["value"] = content
-        return content
+            content = get_html(
+                "/main/home.do", {"Authorization": f"Bearer {bearer_token}"}
+            ).text
+            _LOGGER.debug("Got HTML from /main/home.do\n\n%s", content)
+            self._home_html = content
+            self._home_html_generation = self.generation
+            return content
 
     def websocket_keys_json(self, force_refresh=False):
-        if self.websocket_keys and not force_refresh:
+        with self._lock:
+            self.ensure_logged_in()
+            fresh = self._keys_generation == self.generation
+            if self.websocket_keys and fresh and not force_refresh:
+                return self.websocket_keys
+            html = self.main_home_html(force_refresh)
+            keys = {}
+            for key in ["roomKey", "userKey", "accessToken"]:
+                regex = rf"'{key}': '([^']+)'"
+                match = re.search(regex, html)
+                if match:
+                    keys[key] = match[1]
+                else:
+                    raise Exception(f"Cannot find {key}!")
+            self.websocket_keys = keys
+            self._keys_generation = self.generation
             return self.websocket_keys
-        self.ensure_logged_in()
-        html = self.main_home_html(force_refresh)
-        keys = {}
-        for key in ["roomKey", "userKey", "accessToken"]:
-            regex = rf"'{key}': '([^']+)'"
-            match = re.search(regex, html)
-            if match:
-                keys[key] = match[1]
-            else:
-                raise Exception(f"Cannot find {key}!")
-        self.websocket_keys = keys
-        return self.websocket_keys
 
     def get_csrf(self):
         return self.csrf
@@ -167,21 +215,35 @@ def get_expire_time(token):
     return datetime.datetime.fromtimestamp(exp_time)
 
 
+_http_session = None
+
+
+def http_session():
+    """The shared keep-alive session to the Daelim API.
+
+    Reusing one session keeps the TLS connection pooled, so a control
+    request after hours of idling doesn't pay a fresh handshake.
+    """
+    global _http_session
+    if _http_session is None:
+        s = requests.Session()
+        retries = Retry(
+            total=RETRY,
+            # 0s, 2s, 4s...
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504],
+            # allow retry on POST requests
+            allowed_methods=None,
+        )
+        s.mount(API_PREFIX, HTTPAdapter(max_retries=retries))
+        _http_session = s
+    return _http_session
+
+
 def request_ajax(path, header, params):
     url = API_PREFIX + path
     header = get_json_header() | header
-    s = requests.Session()
-    retries = Retry(
-        total=RETRY,
-        # 0s, 10s, 20s, 40s, 80s...
-        backoff_factor=5,
-        status_forcelist=[500, 502, 503, 504],
-        # allow retry on POST requests
-        allowed_methods=None,
-    )
-
-    s.mount(API_PREFIX, HTTPAdapter(max_retries=retries))
-    response = s.post(url, headers=header, json=params, timeout=TIMEOUT)
+    response = http_session().post(url, headers=header, json=params, timeout=TIMEOUT)
 
     if "content-type" not in response.headers:
         raise TypeError("response has no content-type header")
@@ -196,15 +258,7 @@ def request_ajax(path, header, params):
 def get_html(path, header):
     url = API_PREFIX + path
     header = get_html_header() | header
-    s = requests.Session()
-    retries = Retry(
-        total=RETRY,
-        # 0s, 10s, 20s, 40s, 80s...
-        backoff_factor=5,
-        status_forcelist=[500, 502, 503, 504],
-    )
-    s.mount(API_PREFIX, HTTPAdapter(max_retries=retries))
-    return s.get(url, headers=header, timeout=TIMEOUT)
+    return http_session().get(url, headers=header, timeout=TIMEOUT)
 
 
 def unpad(s):

@@ -4,7 +4,7 @@ DOMAIN = "daelim_smarthome"
 
 API_PREFIX = "https://smartelife.apt.co.kr"
 
-TIMEOUT = 2
+TIMEOUT = 5
 RETRY = 3
 
 BS = 256 // 16
