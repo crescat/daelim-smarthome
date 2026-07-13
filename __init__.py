@@ -36,6 +36,8 @@ MESSAGE_LOGGED_OUT = "장시간 미사용으로 로그아웃 되었습니다."
 MESSAGE_WEBSOCKET_TOKEN_EXPIRED = "만료된 클라우드토큰 입니다."
 MESSAGE_WEBSOCKET_STATUS_NORMAL = "정상"
 
+MAX_CONNECTION_AGE = timedelta(hours=1)
+
 
 def is_logged_out(response) -> bool:
     """Whether an ajax response says the server session is gone."""
@@ -253,12 +255,19 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                 async with connect(url, ssl=self.ssl_context) as websocket:
                     retry_delay = 5  # reset after a successful connection
                     await websocket.send(subscription)
-                    async for raw_message in websocket:
-                        message = json.loads(raw_message)
-                        if not self.handle_websocket_message(message):
-                            # keys rejected: refresh and resubscribe
-                            await self.refresh_websocket_keys(message)
-                            break
+                    try:
+                        async with asyncio.timeout(
+                            MAX_CONNECTION_AGE.total_seconds()
+                        ):
+                            async for raw_message in websocket:
+                                message = json.loads(raw_message)
+                                if not self.handle_websocket_message(message):
+                                    # keys rejected: refresh and resubscribe
+                                    await self.refresh_websocket_keys(message)
+                                    break
+                    except TimeoutError:
+                        _LOGGER.debug("recycling websocket after max age")
+                        continue  # reconnect immediately, no backoff
 
             except websockets.exceptions.ConnectionClosed:
                 _LOGGER.debug(
