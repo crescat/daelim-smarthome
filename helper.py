@@ -9,13 +9,9 @@ import uuid
 from requests.adapters import HTTPAdapter, Retry
 from Crypto.Cipher import AES
 from Crypto import Random
-from .const import TIMEOUT, RETRY, API_PREFIX, KEY, IV, BS
+from .const import TIMEOUT, RETRY, API_PREFIX, KEY, IV, BS, REFRESH_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
-
-# Re-login this long before the token actually expires, so a control
-# request never has to pay the login round trips itself.
-LOGIN_MARGIN = datetime.timedelta(minutes=10)
 
 json_header = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 9_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13C75 DAELIM/IOS",
@@ -34,12 +30,16 @@ html_header = {
 class Credentials:
     """The login session with the Daelim cloud.
 
-    The server keeps a single active session per account: a new login
-    invalidates the previous one, including its cloud (websocket)
-    token. So logins are serialized behind a lock, and everything
-    derived from a session (home html, websocket keys) is tagged with
-    a login generation so staleness is detectable without forcing yet
-    another login.
+    The server keeps a single active session per account and the login
+    token (daelim_elife) lives only ~15 minutes, so the session has to be
+    kept alive. Two operations do that, both serialized behind a lock:
+
+    - login(): bootstrap from username/password. Mints a new cloud
+      (websocket) token server-side, invalidating the previous one, so it
+      is the cold-start path only.
+    - refresh(): reload /main/home.do, which re-embeds a freshly minted
+      token without touching the cloud token, leaving the live websocket
+      undisturbed. This is the routine keep-alive.
     """
 
     def __init__(self, username, password):
@@ -50,10 +50,8 @@ class Credentials:
         self.csrf = None
         self.daelim_elife = None
         self.expire_time = None
-        self.generation = 0
-        self._keys_generation = None
+        self.refreshed_at = None
         self._home_html = None
-        self._home_html_generation = None
         self._lock = threading.RLock()
 
     @classmethod
@@ -80,96 +78,148 @@ class Credentials:
         }
 
     def login(self):
+        """Bootstrap a fresh session from username/password.
+
+        The heavy path: it mints a new cloud (websocket) token
+        server-side and invalidates the previous one, so it runs only
+        when there is no live session to slide (cold start or dead token).
+        """
         if not self.device_id:
             self.device_id = str(uuid.uuid4())
-        if not self.csrf:
-            self.refresh_csrf()
+        self.refresh_csrf()
         response = request_ajax(
             "/login.ajax", {"_csrf": self.csrf}, self.get_login_json()
         )
-        self.daelim_elife = response["daelim_elife"]
-        self.expire_time = get_expire_time(self.daelim_elife)
-        self.generation += 1
+        self._adopt_token(response["daelim_elife"])
+        # login() does not load home.do, so anything derived from it is
+        # stale until refetched.
+        self._home_html = None
+        self.websocket_keys = None
+
+    def refresh(self):
+        """Slide the current session forward without a full re-login.
+
+        Reloading /main/home.do re-embeds a freshly minted 15-minute
+        token, exactly as the app's page navigation does. The cloud token
+        is left in place, so the live websocket keeps running. The csrf is
+        renewed too, to keep the whole HTTP-auth set fresh now that full
+        logins are rare. If the server bounced us to a login page instead
+        (session already gone), fall back to login().
+        """
+        self.refresh_csrf()
+        html = self._fetch_home_html()
+        token = self._scrape(html, "daelim_elife")
+        if not token:
+            self.login()
+            return
+        self._adopt_token(token)
+
+    def _adopt_token(self, token):
+        """Take a freshly minted daelim_elife as the current session."""
+        self.daelim_elife = token
+        self.expire_time = get_expire_time(token)
+        self.refreshed_at = datetime.datetime.now()
 
     def refresh_csrf(self):
         response = request_ajax("/common/nativeToken.ajax", {}, {})
         self.csrf = response["value"]
 
-    def ensure_logged_in(self):
+    def ensure_fresh(self):
+        """Guarantee a usable session before a request.
+
+        No token or an expired one: bootstrap with login(). A live token
+        older than REFRESH_INTERVAL: slide it with the cheap refresh().
+        Otherwise it is young enough to use as-is.
+        """
         with self._lock:
             now = datetime.datetime.now()
             if (
                 not self.daelim_elife
                 or not self.expire_time
-                or now > self.expire_time - LOGIN_MARGIN
+                or now >= self.expire_time
             ):
-                self.refresh_csrf()
                 self.login()
+            elif not self.refreshed_at or now - self.refreshed_at >= REFRESH_INTERVAL:
+                self.refresh()
 
     def force_login(self):
         """Discard local session state and log in again.
 
-        Used when the server rejects a request despite the token
-        looking valid locally (e.g. logged out for inactivity). This
-        invalidates the previous session's cloud token server-side,
-        so use it only when the current session is known dead.
+        Used when the server rejects a request despite the token looking
+        valid locally (e.g. logged out for inactivity). This invalidates
+        the previous session's cloud token server-side, so use it only
+        when the current session is known dead.
         """
         with self._lock:
             self.daelim_elife = None
             self.expire_time = None
-            self.ensure_logged_in()
+            self.ensure_fresh()
 
     def bearer_token(self):
         with self._lock:
-            self.ensure_logged_in()
-            now_in_kst = datetime.datetime.now() + datetime.timedelta(hours=9)
-            return encrypt(
-                "{}::{}".format(
-                    self.daelim_elife,
-                    now_in_kst.strftime("%Y%m%d%H%M%S"),
-                )
+            self.ensure_fresh()
+            return self._bearer_token()
+
+    def _bearer_token(self):
+        """Bearer for the current token, assuming freshness was already
+        ensured. Used inside refresh() itself, where calling the public
+        bearer_token() would recurse through ensure_fresh()."""
+        now_in_kst = datetime.datetime.now() + datetime.timedelta(hours=9)
+        return encrypt(
+            "{}::{}".format(
+                self.daelim_elife,
+                now_in_kst.strftime("%Y%m%d%H%M%S"),
             )
+        )
 
     def daelim_header(self):
         with self._lock:
-            self.ensure_logged_in()
+            self.ensure_fresh()
             return {"_csrf": self.csrf, "daelim_elife": self.daelim_elife}
+
+    def _fetch_home_html(self):
+        """GET and cache /main/home.do with the current bearer.
+
+        The page carries the device list, the websocket keys, and a fresh
+        token, so a fetch invalidates the derived websocket keys to force
+        them to re-extract from the new copy.
+        """
+        content = get_html(
+            "/main/home.do", {"Authorization": f"Bearer {self._bearer_token()}"}
+        ).text
+        _LOGGER.debug("Got HTML from /main/home.do\n\n%s", content)
+        self._home_html = content
+        self.websocket_keys = None
+        return content
 
     def main_home_html(self, force_refresh=False):
         """also used by coordinator to get device list without re-requesting."""
         with self._lock:
-            self.ensure_logged_in()
-            fresh = self._home_html_generation == self.generation
-            if self._home_html and fresh and not force_refresh:
+            self.ensure_fresh()
+            if self._home_html and not force_refresh:
                 return self._home_html
-            bearer_token = self.bearer_token()
-
-            content = get_html(
-                "/main/home.do", {"Authorization": f"Bearer {bearer_token}"}
-            ).text
-            _LOGGER.debug("Got HTML from /main/home.do\n\n%s", content)
-            self._home_html = content
-            self._home_html_generation = self.generation
-            return content
+            return self._fetch_home_html()
 
     def websocket_keys_json(self, force_refresh=False):
         with self._lock:
-            self.ensure_logged_in()
-            fresh = self._keys_generation == self.generation
-            if self.websocket_keys and fresh and not force_refresh:
+            self.ensure_fresh()
+            if self.websocket_keys and not force_refresh:
                 return self.websocket_keys
             html = self.main_home_html(force_refresh)
             keys = {}
             for key in ["roomKey", "userKey", "accessToken"]:
-                regex = rf"'{key}': '([^']+)'"
-                match = re.search(regex, html)
-                if match:
-                    keys[key] = match[1]
-                else:
+                value = self._scrape(html, key)
+                if value is None:
                     raise Exception(f"Cannot find {key}!")
+                keys[key] = value
             self.websocket_keys = keys
-            self._keys_generation = self.generation
             return self.websocket_keys
+
+    @staticmethod
+    def _scrape(html, key):
+        """Pull a single-quoted `'key': 'value'` field out of home.do."""
+        match = re.search(rf"'{key}': '([^']+)'", html)
+        return match[1] if match else None
 
     def get_csrf(self):
         return self.csrf
