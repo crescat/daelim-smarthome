@@ -5,10 +5,13 @@ What's working:
 - light
 - heating
 - air conditioning (possibly buggy)
+- vent
 - door lock (only status)
+- wall socket
 - all-off switch
 - elevator call button
-- car presence
+- car presence/location
+- gas valve
 
 To setup:
 

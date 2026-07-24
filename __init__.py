@@ -29,6 +29,7 @@ PLATFORMS: list[Platform] = [
     Platform.LIGHT,
     Platform.SWITCH,
     Platform.BUTTON,
+    Platform.FAN,
 ]
 
 
@@ -247,6 +248,9 @@ class MyCoordinator(update_coordinator.DataUpdateCoordinator):
                             {"type": "alloffswitch"},
                             {"type": "smartdoor"},
                             {"type": "aircon"},
+                            {"type": "wallsocket"},
+                            {"type": "vent"},
+                            {"type": "gas"},
                             # {"type": "call"},
                         ]
                     }

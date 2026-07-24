@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
@@ -17,6 +18,14 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+_NAME_TOKENS = {"콘센트": "Outlet", "주방": "Kitchen"}
+
+
+def englishize(name: str) -> str:
+    for korean, english in _NAME_TOKENS.items():
+        name = name.replace(korean, english + " ")
+    return re.sub(r"\s+", " ", name).strip()
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -28,33 +37,34 @@ async def async_setup_entry(
     entities = []
     for devices in coordinator.device_list:
         if devices["type"] == "alloffswitch":
-            entities = [
+            entities += [
                 DaelimAllOffSwitch(device_data, coordinator)
+                for device_data in devices["devices"]
+            ]
+        elif devices["type"] == "wallsocket":
+            entities += [
+                DaelimWallSocket(device_data, coordinator)
                 for device_data in devices["devices"]
             ]
 
     async_add_entities(entities)
 
 
-class DaelimAllOffSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of an Daelim switch."""
+class DaelimSwitch(CoordinatorEntity, SwitchEntity):
+    """A Daelim on/off relay (all-off switch, standby-power outlet).
+
+    Both are the same concept server-side: a device with an on/off status
+    driven through /device/control/all.ajax. Subclasses only choose the name.
+    """
 
     def __init__(self, device_data, coordinator) -> None:
-        """Initialize an Daelim all-off switch."""
         self.uid = device_data["uid"]
         super().__init__(coordinator, context=self.uid)
         self.coordinator = coordinator
 
-        self._name = "All off switch"
-
         self._state = device_data["operation"]["status"] == "on"
         self._group = get_location(device_data)
         self._type = device_data["operation"]["type"]
-
-    @property
-    def name(self) -> str:
-        """Return the display name of this switch."""
-        return self._name
 
     @property
     def is_on(self) -> bool | None:
@@ -75,29 +85,24 @@ class DaelimAllOffSwitch(CoordinatorEntity, SwitchEntity):
             manufacturer="Daelim Smarthome",
         )
 
-    def turn_on(self, **kwargs: Any) -> None:
-        """Instruct the switch to turn on."""
+    def _control(self, control: str) -> None:
         body = {
             "type": self._type,
             "uid": self.uid,
-            "control": "on",
+            "control": control,
             "is_control_all": "N",
         }
+        self.coordinator.request_ajax("/device/control/all.ajax", body)
 
-        _response = self.coordinator.request_ajax("/device/control/all.ajax", body)
+    def turn_on(self, **kwargs: Any) -> None:
+        """Instruct the switch to turn on."""
+        self._control("on")
         self._state = True
         self.schedule_update_ha_state()
 
     def turn_off(self, **kwargs: Any) -> None:
         """Instruct the switch to turn off."""
-        body = {
-            "type": self._type,
-            "uid": self.uid,
-            "control": "off",
-            "is_control_all": "N",
-        }
-
-        _response = self.coordinator.request_ajax("/device/control/all.ajax", body)
+        self._control("off")
         self._state = False
         self.schedule_update_ha_state()
 
@@ -107,3 +112,21 @@ class DaelimAllOffSwitch(CoordinatorEntity, SwitchEntity):
         if self.uid in data:
             self._state = data[self.uid]["status"] == "on"
             self.async_write_ha_state()
+
+
+class DaelimAllOffSwitch(DaelimSwitch):
+    """The single whole-home all-off switch."""
+
+    def __init__(self, device_data, coordinator) -> None:
+        super().__init__(device_data, coordinator)
+        self._attr_name = "All off switch"
+
+
+class DaelimWallSocket(DaelimSwitch):
+    """A standby-power outlet (대기전력 콘센트)."""
+
+    def __init__(self, device_data, coordinator) -> None:
+        super().__init__(device_data, coordinator)
+        self._attr_name = "{} {}".format(
+            get_location(device_data), englishize(device_data["device_name"])
+        )

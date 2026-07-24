@@ -43,6 +43,11 @@ async def async_setup_entry(
                 DaelimCarSensor(device_data, coordinator)
                 for device_data in devices["devices"]
             ]
+        if devices["type"] == "gas":
+            entities += [
+                DaelimGasSensor(device_data, coordinator)
+                for device_data in devices["devices"]
+            ]
 
     async_add_entities(entities)
 
@@ -76,6 +81,49 @@ class DaelimDoorSensor(CoordinatorEntity, BinarySensorEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._group)},
+        )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        data = self.coordinator.data
+        if self.uid in data:
+            self._attr_is_on = data[self.uid]["status"] == "open"
+            self.async_write_ha_state()
+
+
+class DaelimGasSensor(CoordinatorEntity, BinarySensorEntity):
+    """Representation of a Daelim gas valve (read-only).
+
+    Remote gas control is deliberately not exposed: opening a gas valve
+    remotely is a safety hazard the wallpad blocks anyway, so this only
+    reports whether the valve is open or shut.
+    """
+
+    def __init__(self, device_data, coordinator) -> None:
+        """Initialize a DaelimGasSensor."""
+        self.uid = device_data["uid"]
+        super().__init__(coordinator, context=self.uid)
+        self.coordinator = coordinator
+
+        self._attr_name = "{} Gas".format(get_location(device_data))
+        self._group = get_location(device_data)
+
+        self._attr_device_class = BinarySensorDeviceClass.OPENING
+        self._attr_is_on = device_data["operation"]["status"] == "open"
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique, Home Assistant friendly identifier for this entity."""
+        return self.uid
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._group)},
+            name=self._group,
+            manufacturer="Daelim Smarthome",
         )
 
     @callback
