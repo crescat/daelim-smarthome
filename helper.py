@@ -9,7 +9,17 @@ import uuid
 from requests.adapters import HTTPAdapter, Retry
 from Crypto.Cipher import AES
 from Crypto import Random
-from .const import TIMEOUT, RETRY, API_PREFIX, KEY, IV, BS, REFRESH_INTERVAL
+from .const import (
+    CONNECT_TIMEOUT,
+    FAST_READ_TIMEOUT,
+    READ_TIMEOUT,
+    RETRY,
+    API_PREFIX,
+    KEY,
+    IV,
+    BS,
+    REFRESH_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -309,25 +319,26 @@ def reset_http_session():
 
 
 def _send_with_recovery(send):
-    """Run send(session), retrying once on a guaranteed-fresh connection.
+    """Run send(session, timeout), retrying once on a fresh connection.
 
     A stale pooled socket can't be told apart from a live one up front, so
-    the first attempt may hang until the read timeout. On any timeout or
-    connection error we drop the pool and redial, so the retry never reuses
-    the socket that just failed.
+    the first attempt fails fast (FAST_READ_TIMEOUT). On any timeout or
+    connection error we drop the pool and redial, giving the fresh, known-good
+    connection a far more patient budget (READ_TIMEOUT) since a cold server
+    can be slow to answer.
     """
     try:
-        return send(http_session())
+        return send(http_session(), (CONNECT_TIMEOUT, FAST_READ_TIMEOUT))
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         reset_http_session()
-        return send(http_session())
+        return send(http_session(), (CONNECT_TIMEOUT, READ_TIMEOUT))
 
 
 def request_ajax(path, header, params):
     url = API_PREFIX + path
     header = get_json_header() | header
     response = _send_with_recovery(
-        lambda s: s.post(url, headers=header, json=params, timeout=TIMEOUT)
+        lambda s, timeout: s.post(url, headers=header, json=params, timeout=timeout)
     )
 
     if "content-type" not in response.headers:
@@ -344,7 +355,7 @@ def get_html(path, header):
     url = API_PREFIX + path
     header = get_html_header() | header
     return _send_with_recovery(
-        lambda s: s.get(url, headers=header, timeout=TIMEOUT)
+        lambda s, timeout: s.get(url, headers=header, timeout=timeout)
     )
 
 

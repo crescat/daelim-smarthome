@@ -6,7 +6,13 @@ DOMAIN = "daelim_smarthome"
 
 API_PREFIX = "https://smartelife.apt.co.kr"
 
-TIMEOUT = 3
+# The first request tries the pooled connection and fails fast: a socket
+# silently dropped during idle should not eat the whole budget. The retry
+# redials a fresh connection and waits far longer, because a cold server can
+# genuinely take several seconds to answer (e.g. /common/nativeToken.ajax).
+CONNECT_TIMEOUT = 5
+FAST_READ_TIMEOUT = 3
+READ_TIMEOUT = 15
 RETRY = 3
 
 REFRESH_INTERVAL = timedelta(minutes=10)
