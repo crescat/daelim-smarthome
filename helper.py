@@ -180,7 +180,7 @@ class Credentials:
             "input_hm_cd": "",
             "input_acc_os_info": "ios",
             "input_dv_osver_info": "15.4.1",
-            "input_auto_login": "off",
+            "input_auto_login": "on",
             "input_dv_make_info": "Apple",
             "input_version": "1.1.4",
             "input_push_token": "",
@@ -229,6 +229,10 @@ def http_session():
         s = requests.Session()
         retries = Retry(
             total=RETRY,
+            # Read timeouts are recovered by _send_with_recovery on a fresh
+            # connection instead: retrying within the same pool can just hand
+            # back another socket that a NAT/firewall silently dropped.
+            read=0,
             # 0s, 2s, 4s...
             backoff_factor=1,
             status_forcelist=[500, 502, 503, 504],
@@ -240,10 +244,41 @@ def http_session():
     return _http_session
 
 
+def reset_http_session():
+    """Throw the pooled connection away so the next request dials a fresh one.
+
+    A keep-alive socket dropped during idle by a NAT/firewall stays
+    ESTABLISHED on our side with no FIN to detect, so a request on it just
+    hangs until the read timeout. Once that happens we discard the whole
+    pool rather than risk handing out another dead connection.
+    """
+    global _http_session
+    if _http_session is not None:
+        _http_session.close()
+        _http_session = None
+
+
+def _send_with_recovery(send):
+    """Run send(session), retrying once on a guaranteed-fresh connection.
+
+    A stale pooled socket can't be told apart from a live one up front, so
+    the first attempt may hang until the read timeout. On any timeout or
+    connection error we drop the pool and redial, so the retry never reuses
+    the socket that just failed.
+    """
+    try:
+        return send(http_session())
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        reset_http_session()
+        return send(http_session())
+
+
 def request_ajax(path, header, params):
     url = API_PREFIX + path
     header = get_json_header() | header
-    response = http_session().post(url, headers=header, json=params, timeout=TIMEOUT)
+    response = _send_with_recovery(
+        lambda s: s.post(url, headers=header, json=params, timeout=TIMEOUT)
+    )
 
     if "content-type" not in response.headers:
         raise TypeError("response has no content-type header")
@@ -258,7 +293,9 @@ def request_ajax(path, header, params):
 def get_html(path, header):
     url = API_PREFIX + path
     header = get_html_header() | header
-    return http_session().get(url, headers=header, timeout=TIMEOUT)
+    return _send_with_recovery(
+        lambda s: s.get(url, headers=header, timeout=TIMEOUT)
+    )
 
 
 def unpad(s):
